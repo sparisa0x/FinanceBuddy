@@ -12,7 +12,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const { userName, logout } = useFinance();
+  const { userName, logout, isAdmin } = useFinance();
 
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
@@ -20,7 +20,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   };
 
   const handleLogout = () => {
-    // Direct logout to ensure action triggers immediately
     logout();
   };
 
@@ -50,6 +49,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
         <nav className="space-y-1 p-4 flex-1 overflow-y-auto">
           {MENU_ITEMS.map((item) => {
+             // Admin check
+             if ((item as any).adminOnly && !isAdmin) return null;
+
              const Icon = item.icon;
              const isActive = activeTab === item.id;
              return (
@@ -107,7 +109,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
             
-            {/* Desktop Header Sign Out */}
             <button 
               type="button"
               onClick={handleLogout}
@@ -120,7 +121,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             <div className="flex items-center gap-3 border-l border-slate-200 pl-4 dark:border-slate-800">
                <div className="text-right hidden md:block">
                   <p className="text-sm font-medium text-slate-900 dark:text-white">{userName}</p>
-                  <p className="text-xs text-slate-500">Premium Plan</p>
+                  <p className="text-xs text-slate-500">{isAdmin ? 'Administrator' : 'Premium Plan'}</p>
                </div>
                <div className="h-9 w-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
                   <User className="h-5 w-5 text-slate-500 dark:text-slate-400" />

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, PiggyBank, TrendingUp, ShoppingBag, PieChart, Upload, Calendar, History } from 'lucide-react';
+import { LayoutDashboard, Wallet, PiggyBank, TrendingUp, ShoppingBag, PieChart, Upload, Calendar, History, UserCircle, Shield } from 'lucide-react';
 
 export const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -9,7 +9,9 @@ export const MENU_ITEMS = [
   { id: 'wishlist', label: 'Wishlist', icon: ShoppingBag },
   { id: 'history', label: 'Financial Archives', icon: History },
   { id: 'analytics', label: 'Deep Analytics', icon: PieChart },
+  { id: 'profile', label: 'Profile & Security', icon: UserCircle },
   { id: 'import', label: 'Import Data', icon: Upload },
+  { id: 'admin', label: 'Admin Panel', icon: Shield, adminOnly: true },
 ];
 
 export const MOCK_DATA = {

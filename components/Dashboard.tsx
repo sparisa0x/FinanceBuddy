@@ -1,25 +1,14 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, Activity, ShieldAlert, DollarSign, Edit2, Save, X, ShoppingBag } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Activity, ShieldAlert, DollarSign, Edit2, X, ShoppingBag } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
-  const { netWorth, totalDebt, healthScore, transactions, currency, userName, setUserName, creditScores, updateCreditScores, wishlist } = useFinance();
+  const { netWorth, totalDebt, healthScore, transactions, currency, userName, creditScores, updateCreditScores, wishlist } = useFinance();
   
-  // Local state for name editing
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [tempName, setTempName] = useState(userName);
-
   // Local state for credit score editing
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
   const [tempScores, setTempScores] = useState(creditScores);
-
-  const handleSaveName = () => {
-    if (tempName.trim()) {
-      setUserName(tempName);
-      setIsEditingName(false);
-    }
-  };
 
   const handleSaveScores = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,36 +66,9 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            {isEditingName ? (
-              <div className="flex items-center gap-2">
-                <input 
-                  type="text" 
-                  value={tempName} 
-                  onChange={(e) => setTempName(e.target.value)}
-                  className="text-2xl font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                  autoFocus
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                />
-                <button 
-                  onClick={handleSaveName} 
-                  className="p-2 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 transition-colors"
-                  title="Save Name"
-                >
-                  <Save className="w-5 h-5" />
-                </button>
-              </div>
-            ) : (
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+             <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Welcome back, {userName}
-                <button 
-                  onClick={() => { setTempName(userName); setIsEditingName(true); }} 
-                  className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
-                  title="Edit Name"
-                >
-                  <Edit2 className="w-5 h-5" />
-                </button>
-              </h1>
-            )}
+             </h1>
           </div>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Here's your financial overview for {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}.</p>
         </div>

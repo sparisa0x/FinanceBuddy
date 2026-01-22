@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -8,7 +8,9 @@ import { Investments } from './components/Investments';
 import { Wishlist } from './components/Wishlist';
 import { CalendarView } from './components/CalendarView';
 import { FinancialArchives } from './components/FinancialArchives';
+import { Profile } from './components/Profile';
 import { Login } from './components/Login';
+import { AdminPanel } from './components/AdminPanel';
 import { Upload, FileText } from 'lucide-react';
 
 // Simulated Import Component since it's simple
@@ -35,8 +37,19 @@ const AnalyticsView = () => (
 
 // Child component to consume context and decide view
 const AppContent: React.FC = () => {
-  const { isAuthenticated } = useFinance();
+  const { isAuthenticated, isAdmin } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Check URL params for direct links (like from email)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab && isAuthenticated) {
+       setActiveTab(tab);
+       // Clean URL
+       window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) {
     return <Login />;
@@ -51,8 +64,10 @@ const AppContent: React.FC = () => {
       case 'debts': return <DebtManager />;
       case 'investments': return <Investments />;
       case 'wishlist': return <Wishlist />;
+      case 'profile': return <Profile />;
       case 'import': return <ImportView />;
       case 'analytics': return <AnalyticsView />;
+      case 'admin': return isAdmin ? <AdminPanel /> : <Dashboard />;
       default: return <Dashboard />;
     }
   };
