@@ -98,7 +98,7 @@ const UserDataSchema = new mongoose.Schema({
 }, { minimize: false });
 
 // Prevent model recompilation error in serverless environment
-const UserData = mongoose.models.UserData || mongoose.model('UserData', UserDataSchema);
+const UserData: any = mongoose.models.UserData || mongoose.model('UserData', UserDataSchema);
 
 async function sendApprovalEmail(newUser: any, host: string) {
   if (!SMTP_EMAIL || !SMTP_PASSWORD) return;
