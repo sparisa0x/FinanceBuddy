@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Transaction, Debt, Investment, WishlistItem, FinancialHealth } from '../types';
-import { MOCK_DATA } from '../constants';
 
 interface FinanceContextType {
   transactions: Transaction[];
@@ -32,7 +31,7 @@ interface FinanceContextType {
   changePassword: (newPass: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
-  isCloudConnected: boolean; // New State
+  isCloudConnected: boolean;
   
   // Admin Functions
   pendingUsers: any[];
@@ -48,7 +47,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authCreds, setAuthCreds] = useState({ u: '', p: '' });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); 
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   
   // Admin State
@@ -67,24 +66,135 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [userName, setUserName] = useState("Sriram Parisa");
   const currency = "₹";
 
-  // Check Cloud Connection on Mount
+  // Auth & Data Initialization Logic
   useEffect(() => {
-    const checkConnection = async () => {
+    const initApp = async () => {
+      setIsLoading(true);
+      
+      // 1. Check connectivity
+      let connected = false;
       try {
         const res = await fetch('/api/finance?action=ping');
         if (res.ok) {
-           const data = await res.json();
-           if (data.success) setIsCloudConnected(true);
-        } else {
-           setIsCloudConnected(false);
+          setIsCloudConnected(true);
+          connected = true;
         }
       } catch (e) {
-        setIsCloudConnected(false);
-        console.log("Running in offline mode (API not reachable)");
+        console.log("Offline mode detected initially");
+      }
+
+      // 2. Restore Session
+      const savedSession = localStorage.getItem('finance_session');
+      if (savedSession) {
+        try {
+          const { u, p } = JSON.parse(savedSession);
+          if (u && p) {
+            console.log("Restoring session for:", u);
+            // Attempt login (fetches data)
+            await loginInternal(u, p, connected); 
+          } else {
+             setIsLoading(false);
+          }
+        } catch (e) {
+          localStorage.removeItem('finance_session');
+          setIsLoading(false);
+        }
+      } else {
+        setIsLoading(false);
       }
     };
-    checkConnection();
+
+    initApp();
   }, []);
+
+  // Internal Login function to reuse logic without triggering loop
+  const loginInternal = async (u: string, p: string, cloudAvailable: boolean) => {
+      // 0. Super Admin Backdoor
+      if (u === 'buddy' && p === '@123Buddy') {
+          setIsAuthenticated(true);
+          setUserName("Super Admin");
+          setIsAdmin(true);
+          setAuthCreds({ u, p });
+          setTransactions([]); setDebts([]); setInvestments([]); setWishlist([]);
+          setCreditScores({ cibil: 900, experian: 900 });
+          localStorage.setItem('finance_session', JSON.stringify({ u, p }));
+          setIsLoading(false);
+          return { success: true };
+      }
+
+      // 1. Cloud Login
+      if (cloudAvailable) {
+        try {
+          const res = await fetch(`/api/finance?username=${u}&password=${p}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              const dbData = data.data;
+              
+              setIsAuthenticated(true);
+              setUserName(dbData.displayName || "User");
+              setIsAdmin(dbData.isAdmin || false);
+              setAuthCreds({ u, p });
+
+              // Update State
+              if (dbData.transactions) setTransactions(dbData.transactions);
+              if (dbData.debts) setDebts(dbData.debts);
+              if (dbData.investments) setInvestments(dbData.investments);
+              if (dbData.wishlist) setWishlist(dbData.wishlist);
+              if (dbData.creditScores) setCreditScores(dbData.creditScores);
+
+              // Cache
+              localStorage.setItem('finance_session', JSON.stringify({ u, p }));
+              localStorage.setItem(`finance_user_${u}`, JSON.stringify({ ...dbData, password: p }));
+              
+              setIsLoading(false);
+              return { success: true };
+            }
+          }
+        } catch (e) {
+          console.warn("Cloud login failed during restore, falling back to local");
+        }
+      }
+
+      // 2. Local Fallback
+      const localData = localStorage.getItem(`finance_user_${u}`);
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        if (parsed.password === p) {
+           setIsAuthenticated(true);
+           setUserName(parsed.displayName || "User (Offline)");
+           setIsAdmin(parsed.isAdmin || false);
+           setAuthCreds({ u, p });
+           
+           setTransactions(parsed.transactions || []);
+           setDebts(parsed.debts || []);
+           setInvestments(parsed.investments || []);
+           setWishlist(parsed.wishlist || []);
+           setCreditScores(parsed.creditScores || { cibil: 750, experian: 780 });
+
+           localStorage.setItem('finance_session', JSON.stringify({ u, p }));
+           setIsLoading(false);
+           return { success: true, message: "Logged in (Offline Mode)" };
+        }
+      }
+
+      setIsLoading(false);
+      return { success: false, message: "Login failed" };
+  };
+
+  // Public Login Wrapper
+  const login = async (u: string, p: string) => {
+    setIsLoading(true);
+    // Re-check cloud connectivity before login
+    let connected = isCloudConnected;
+    if(!connected) {
+       try {
+         const res = await fetch('/api/finance?action=ping');
+         if(res.ok) { setIsCloudConnected(true); connected = true; }
+       } catch(e) {}
+    }
+    return loginInternal(u, p, connected);
+  };
 
   // Derived Analytics
   const totalAssets = investments.reduce((acc, curr) => acc + curr.currentValue, 0) + 
@@ -99,7 +209,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const syncData = async (newData: any) => {
     if (!isAuthenticated) return;
     
-    // 1. Optimistic UI Update
+    // 1. Optimistic Update
     if(newData.transactions) setTransactions(newData.transactions);
     if(newData.debts) setDebts(newData.debts);
     if(newData.investments) setInvestments(newData.investments);
@@ -107,7 +217,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if(newData.creditScores) setCreditScores(newData.creditScores);
     if(newData.displayName) setUserName(newData.displayName);
 
-    // Prepare payload
     const payload = {
        transactions: newData.transactions || transactions,
        debts: newData.debts || debts,
@@ -115,39 +224,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
        wishlist: newData.wishlist || wishlist,
        creditScores: newData.creditScores || creditScores,
        displayName: newData.displayName || userName,
-       password: newData.password // Optional
+       password: newData.password 
     };
 
-    // 2. Attempt Local Storage Sync (Offline First)
+    // 2. Local Save
     try {
       const storageKey = `finance_user_${authCreds.u}`;
       const currentData = JSON.parse(localStorage.getItem(storageKey) || '{}');
       localStorage.setItem(storageKey, JSON.stringify({ ...currentData, ...payload }));
-    } catch (e) {
-      console.error("Local save failed", e);
-    }
+    } catch (e) { console.error(e); }
 
-    // 3. Attempt Cloud Sync
-    if (isCloudConnected) {
-      try {
-        const res = await fetch('/api/finance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            username: authCreds.u,
-            data: payload 
-          })
-        });
-        if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
-           await res.json();
-        }
-      } catch (e) {
-        console.warn("Cloud sync failed, data saved locally only.");
-      }
+    // 3. Cloud Sync
+    try {
+      const res = await fetch('/api/finance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authCreds.u, data: payload })
+      });
+      if (res.ok) setIsCloudConnected(true);
+    } catch (e) {
+      console.warn("Cloud sync failed");
+      setIsCloudConnected(false);
     }
   };
 
-  // Health Score Calculation Logic
+  // Health Score Logic
   useEffect(() => {
     const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0) || 1;
     const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -214,14 +315,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       description: `EMI Payment`
     };
     const updatedTransactions = [newTrans, ...transactions];
-
-    const updatedDebts = debts.map(d => {
-      if (d.id === debtId) {
-        return { ...d, remainingAmount: Math.max(0, d.remainingAmount - amount) };
-      }
-      return d;
-    });
-
+    const updatedDebts = debts.map(d => d.id === debtId ? { ...d, remainingAmount: Math.max(0, d.remainingAmount - amount) } : d);
     syncData({ transactions: updatedTransactions, debts: updatedDebts });
   };
 
@@ -254,26 +348,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const changePassword = async (newPass: string) => {
      try {
        await syncData({ password: newPass });
-       // Update local auth creds
        setAuthCreds(prev => ({ ...prev, p: newPass }));
+       localStorage.setItem('finance_session', JSON.stringify({ u: authCreds.u, p: newPass }));
        return true;
-     } catch (e) {
-       return false;
-     }
+     } catch (e) { return false; }
   };
 
-  // ADMIN ACTIONS
   const fetchPendingUsers = async () => {
     if (!isAdmin) return;
     try {
       const res = await fetch('/api/finance?action=pending_users');
       const data = await res.json();
-      if (data.success) {
-        setPendingUsers(data.data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch pending users", e);
-    }
+      if (data.success) setPendingUsers(data.data);
+    } catch (e) {}
   };
 
   const approveUser = async (targetUsername: string) => {
@@ -289,9 +376,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return true;
       }
       return false;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   };
 
   const rejectUser = async (targetUsername: string) => {
@@ -307,147 +392,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return true;
       }
       return false;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  // Auth Logic
-  const login = async (u: string, p: string) => {
-    setIsLoading(true);
-    try {
-      // 0. Super Admin Backdoor (Guarantees access even if API is down)
-      if (u === 'buddy' && p === '@123Buddy') {
-          setIsAuthenticated(true);
-          setUserName("Super Admin");
-          setIsAdmin(true);
-          setAuthCreds({ u, p });
-          // Empty initial data for super admin if not fetched
-          setTransactions([]);
-          setDebts([]);
-          setInvestments([]);
-          setWishlist([]);
-          setCreditScores({ cibil: 900, experian: 900 });
-          setIsLoading(false);
-          return { success: true };
-      }
-
-      // 1. Check Cloud Login first if connected
-      let cloudSuccess = false;
-      if (isCloudConnected) {
-        try {
-          const res = await fetch(`/api/finance?username=${u}&password=${p}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-              cloudSuccess = true;
-              setIsAuthenticated(true);
-              setUserName(data.data.displayName || "Sriram Parisa");
-              setIsAdmin(data.data.isAdmin || false);
-              setAuthCreds({ u, p });
-
-              const dbData = data.data;
-              setTransactions(dbData.transactions || []);
-              setDebts(dbData.debts || []);
-              setInvestments(dbData.investments || []);
-              setWishlist(dbData.wishlist || []);
-              setCreditScores(dbData.creditScores || { cibil: 750, experian: 780 });
-              
-              // Sync cloud data to local for future offline use
-              localStorage.setItem(`finance_user_${u}`, JSON.stringify({ ...dbData, password: p }));
-              
-              setIsLoading(false);
-              return { success: true };
-            } else if (res.status === 403) {
-               setIsLoading(false);
-               return { success: false, message: 'Account pending approval. Please wait for admin verification email.' };
-            }
-          }
-        } catch (err) {
-          console.warn("Cloud login failed, trying local...");
-        }
-      }
-
-      // 2. Check LocalStorage (Offline support)
-      if (!cloudSuccess) {
-        const localData = localStorage.getItem(`finance_user_${u}`);
-        if (localData) {
-          const parsed = JSON.parse(localData);
-          if (parsed.password && parsed.password === p) {
-             // Success Local Login
-             setIsAuthenticated(true);
-             setUserName(parsed.displayName || "User (Offline)");
-             setIsAdmin(parsed.isAdmin || false); 
-             setAuthCreds({ u, p });
-             setTransactions(parsed.transactions || []);
-             setDebts(parsed.debts || []);
-             setInvestments(parsed.investments || []);
-             setWishlist(parsed.wishlist || []);
-             setCreditScores(parsed.creditScores || { cibil: 750, experian: 780 });
-             setIsLoading(false);
-             return { success: true, message: "Logged in (Offline Mode)" };
-          } else {
-             setIsLoading(false);
-             return { success: false, message: 'Invalid password (Offline check)' };
-          }
-        }
-      }
-
-      return { success: false, message: 'User not found or connection failed.' };
-    } catch (err) {
-      console.warn("Login fallback mode due to:", err);
-      return { success: false, message: 'Connection Error.' };
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e) { return false; }
   };
 
   const register = async (u: string, p: string, name: string, email: string) => {
-    setIsLoading(true);
-    
-    // Save locally first (Optimistic) - BUT for register halt we might not want this?
-    // User wants to HALT. So local storage shouldn't just let them in.
-    // However, existing logic allowed offline fallback. We should probably disable offline register login if we want to enforce approval.
-    // We will save to local, but mark as NOT authenticated in local logic until approved.
-
     try {
-      if (!isCloudConnected) {
-         return { success: false, message: "Cannot register in offline mode. Please connect to server." };
-      }
-
       const res = await fetch(`/api/finance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-           action: 'register', 
-           username: u, 
-           password: p, 
-           displayName: name,
-           email: email 
-        })
+        body: JSON.stringify({ action: 'register', username: u, password: p, displayName: name, email: email })
       });
-
-      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
-         const data = await res.json();
-         if (data.success) {
-             // If Admin (auto-approved), login immediately
-             if (data.data.isApproved) {
-                 return login(u, p);
-             }
-             // Else, tell them to wait
-             return { success: true, message: 'Registration successful! Please wait for admin approval (Email sent to admin).' };
-         } else {
-             return { success: false, message: data.message };
-         }
+      const data = await res.json();
+      if (res.ok && data.success) {
+         if (data.data.isApproved) return login(u, p);
+         return { success: true, message: 'Registration successful! Please wait for admin approval.' };
       }
-      
-      return { success: false, message: "Registration failed or server offline." };
-
+      return { success: false, message: data.message || "Registration failed" };
     } catch (err) {
-      console.warn("Registration offline mode failed");
-      return { success: false, message: 'Server connection required for registration.' };
-    } finally {
-      setIsLoading(false);
+      return { success: false, message: 'Connection failed.' };
     }
   };
 
@@ -455,10 +417,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsAuthenticated(false);
     setIsAdmin(false);
     setUserName("Guest");
-    setTransactions([]);
-    setDebts([]);
-    setInvestments([]);
+    setTransactions([]); setDebts([]); setInvestments([]);
     setAuthCreds({ u: '', p: '' });
+    localStorage.removeItem('finance_session');
   };
 
   return (
