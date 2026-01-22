@@ -1,7 +1,7 @@
-import { ChartBar, Wallet, PiggyBank, TrendingUp, ShoppingBag, PieChart, Upload, Calendar, History } from 'lucide-react';
+import { LayoutDashboard, Wallet, PiggyBank, TrendingUp, ShoppingBag, PieChart, Upload, Calendar, History } from 'lucide-react';
 
 export const MENU_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: ChartBar },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'calendar', label: 'Financial Calendar', icon: Calendar },
   { id: 'income-expense', label: 'Income & Expenses', icon: Wallet },
   { id: 'debts', label: 'Debts & EMI', icon: PiggyBank },

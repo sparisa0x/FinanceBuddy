@@ -9,7 +9,7 @@ export const FinancialArchives: React.FC = () => {
   const [recordType, setRecordType] = useState<'expense' | 'income' | 'investment'>('expense');
 
   // Group transactions by Year
-  const years = Array.from(new Set(transactions.map(t => new Date(t.date).getFullYear()))).sort((a, b) => b - a);
+  const years = Array.from(new Set(transactions.map(t => new Date(t.date).getFullYear()))).sort((a: number, b: number) => b - a);
   // Add current year if not exists
   if (!years.includes(new Date().getFullYear())) years.unshift(new Date().getFullYear());
 
@@ -96,7 +96,7 @@ export const FinancialArchives: React.FC = () => {
           <div className="border-t border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50 rounded-b-xl">
              <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Monthly Breakdown</h4>
              <div className="space-y-2 max-h-60 overflow-y-auto">
-               {Array.from({length: 12}, (_, i) => i).map(month => {
+               {(Array.from({length: 12}, (_, i) => i) as number[]).map(month => {
                   const monthName = new Date(year, month).toLocaleString('default', { month: 'long' });
                   const monthTrans = yearTrans.filter(t => new Date(t.date).getMonth() === month);
                   if (monthTrans.length === 0) return null;
