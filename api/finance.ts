@@ -1,16 +1,14 @@
 import mongoose from 'mongoose';
 import nodemailer from 'nodemailer';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// 1. Database Connection Logic
+// Environment variables
 const MONGODB_URI = process.env.MONGODB_URI;
 const SMTP_EMAIL = process.env.SMTP_EMAIL; 
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD; 
 const NOTIFICATION_EMAIL = 'sriramparisa0x@proton.me'; 
 
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable inside .env');
-}
-
+// Caching the connection for Vercel "Hot" instances
 let cached = (globalThis as any).mongoose;
 
 if (!cached) {
@@ -18,20 +16,38 @@ if (!cached) {
 }
 
 async function connectToDatabase() {
-  if (cached.conn) return cached.conn;
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is missing in Vercel Environment Variables');
+  }
+  
+  if (cached.conn) {
+    // console.log("Using cached MongoDB connection");
+    return cached.conn;
+  }
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI!, {
+    const opts = {
       bufferCommands: false,
-    }).then((mongoose) => {
+      serverSelectionTimeoutMS: 5000, // Fail fast if network is down
+    };
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      console.log("New MongoDB connection established");
       return mongoose;
     });
   }
-  cached.conn = await cached.promise;
+  
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
   return cached.conn;
 }
 
-// 2. Define the Schema
+// Schema Definition
 const UserDataSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -81,176 +97,143 @@ const UserDataSchema = new mongoose.Schema({
   }
 }, { minimize: false });
 
+// Prevent model recompilation error in serverless environment
 const UserData = mongoose.models.UserData || mongoose.model('UserData', UserDataSchema);
 
-// Email Sender Helper
 async function sendApprovalEmail(newUser: any, host: string) {
-  if (!SMTP_EMAIL || !SMTP_PASSWORD) {
-    console.log("SMTP credentials missing. Skipping email.");
-    return;
-  }
+  if (!SMTP_EMAIL || !SMTP_PASSWORD) return;
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user: SMTP_EMAIL,
-      pass: SMTP_PASSWORD,
-    },
+    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
   });
 
-  const approvalLink = `http://${host}/?tab=admin`; 
-
-  const mailOptions = {
-    from: SMTP_EMAIL,
-    to: NOTIFICATION_EMAIL,
-    subject: `New User Registration: ${newUser.displayName}`,
-    html: `
-      <h3>New Account Request</h3>
-      <p><strong>Name:</strong> ${newUser.displayName}</p>
-      <p><strong>Username:</strong> ${newUser.username}</p>
-      <p><strong>Email:</strong> ${newUser.email}</p>
-      <p>This account is currently <strong>PENDING</strong>.</p>
-      <p>Please log in to your admin account to approve or reject this user.</p>
-      <a href="${approvalLink}" style="padding: 10px 20px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">Go to Admin Panel</a>
-    `,
-  };
+  const approvalLink = `https://${host}/?tab=admin`; 
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log('Approval email sent');
+    await transporter.sendMail({
+      from: SMTP_EMAIL,
+      to: NOTIFICATION_EMAIL,
+      subject: `New User Registration: ${newUser.displayName}`,
+      html: `
+        <h3>New Account Request</h3>
+        <p><strong>Name:</strong> ${newUser.displayName}</p>
+        <p><strong>Username:</strong> ${newUser.username}</p>
+        <a href="${approvalLink}" style="padding: 10px 20px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">Go to Admin Panel</a>
+      `,
+    });
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Email error:', error);
   }
 }
 
-// 3. The API Handler
-export default async function handler(req: any, res: any) {
-  await connectToDatabase();
+// Vercel Handler
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Add CORS headers for Vercel
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  try {
+    await connectToDatabase();
+  } catch (error: any) {
+    console.error("DB Connect Error:", error);
+    return res.status(500).json({ success: false, message: 'Database connection failed', error: error.message });
+  }
 
   const { method } = req;
+  const query = req.query;
+  const body = req.body;
+
+  // HEALTH CHECK
+  if (method === 'GET' && query.action === 'ping') {
+    return res.status(200).json({ success: true, message: 'MongoDB Connected', mode: 'cloud' });
+  }
   
   // LOGIN & FETCH
   if (method === 'GET') {
-    const { username, password, action } = req.query;
+    const { username, password, action } = query;
     
-    // Auto-Seed 'buddy' admin user if they try to login and don't exist
-    if (username === 'buddy' && !action) {
-      const existingBuddy = await UserData.findOne({ username: 'buddy' });
-      if (!existingBuddy && password === '@123Buddy') {
-         await UserData.create({
-            username: 'buddy',
-            password: '@123Buddy',
-            displayName: 'Super Admin',
-            email: 'admin@financebuddy.com',
-            isAdmin: true,
-            isApproved: true,
-            transactions: [],
-            debts: [],
-            investments: [],
-            wishlist: [],
-            creditScores: { cibil: 900, experian: 900 }
-         });
-         console.log("Seeded buddy admin account");
-      }
+    // Auto-Seed Admin
+    if (username === 'buddy') {
+       const existing = await UserData.findOne({ username: 'buddy' });
+       if (!existing && password === '@123Buddy') {
+           await UserData.create({
+              username: 'buddy', password: '@123Buddy', displayName: 'Super Admin',
+              email: 'admin@financebuddy.com', isAdmin: true, isApproved: true,
+              transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 900, experian: 900 }
+           });
+       }
     }
 
-    // Admin Action: Fetch Pending Users
     if (action === 'pending_users') {
-      try {
-        const pendingUsers = await UserData.find({ isApproved: false }, 'username displayName email');
-        return res.status(200).json({ success: true, data: pendingUsers });
-      } catch (error) {
-        return res.status(500).json({ success: false, error: 'Database error' });
-      }
+      const pendingUsers = await UserData.find({ isApproved: false }, 'username displayName email');
+      return res.status(200).json({ success: true, data: pendingUsers });
     }
 
-    // Standard Login
     try {
       const user = await UserData.findOne({ username });
-
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'User not found' });
-      }
-
-      if (user.password !== password) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
-      }
-
-      // Check Approval
-      if (!user.isApproved) {
-         return res.status(403).json({ success: false, message: 'Account pending approval. Please wait for admin verification.' });
-      }
+      if (!user) return res.status(401).json({ success: false, message: 'User not found' });
+      if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      if (!user.isApproved) return res.status(403).json({ success: false, message: 'Pending approval' });
 
       return res.status(200).json({ success: true, data: user });
-    } catch (error) {
-      return res.status(500).json({ success: false, error: 'Database error' });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
     }
   }
 
-  // SAVE / UPDATE / REGISTER / APPROVE
+  // POST ACTIONS
   if (method === 'POST') {
-    const { username, data, action, password, displayName, email } = req.body;
+    const { username, data, action, password, displayName, email } = body;
 
     try {
-      // ADMIN: APPROVE USER
       if (action === 'approve_user') {
-         const { targetUsername, decision } = req.body; // decision: 'approve' or 'reject'
-         
+         const { targetUsername, decision } = body;
          if (decision === 'reject') {
             await UserData.deleteOne({ username: targetUsername });
-            return res.status(200).json({ success: true, message: 'User rejected and removed' });
+            return res.status(200).json({ success: true, message: 'Rejected' });
          } else {
             await UserData.findOneAndUpdate({ username: targetUsername }, { isApproved: true });
-            return res.status(200).json({ success: true, message: 'User approved' });
+            return res.status(200).json({ success: true, message: 'Approved' });
          }
       }
 
-      // REGISTER
       if (action === 'register') {
         const existing = await UserData.findOne({ username });
-        if (existing) {
-          return res.status(400).json({ success: false, message: 'Username already taken' });
-        }
+        if (existing) return res.status(400).json({ success: false, message: 'Username taken' });
         
-        // Auto-approve specific emails
         const isAdminEmail = email === 'sriramparisa0x@gmail.com';
-        
         const newUser = await UserData.create({
-          username,
-          password,
-          email,
-          displayName: displayName || 'Sriram Parisa',
-          isApproved: isAdminEmail, 
-          isAdmin: isAdminEmail,   
-          transactions: [],
-          debts: [],
-          investments: [],
-          wishlist: [],
+          username, password, email, displayName: displayName || 'User',
+          isApproved: isAdminEmail, isAdmin: isAdminEmail,
+          transactions: [], debts: [], investments: [], wishlist: [],
           creditScores: { cibil: 750, experian: 780 }
         });
 
-        // Send Email Notification if not auto-approved
         if (!isAdminEmail) {
-           const host = req.headers.host || 'localhost:3000';
-           await sendApprovalEmail(newUser, host);
+           await sendApprovalEmail(newUser, req.headers.host || 'finance-buddy.vercel.app');
         }
-
         return res.status(200).json({ success: true, data: newUser });
       }
 
-      // DATA SYNC / UPDATE
-      const user = await UserData.findOneAndUpdate(
-        { username },
-        { $set: data },
-        { new: true }
-      );
-      
+      // Sync Data
+      const user = await UserData.findOneAndUpdate({ username }, { $set: data }, { new: true });
       return res.status(200).json({ success: true, data: user });
-    } catch (error) {
-      return res.status(500).json({ success: false, error: 'Failed to update' });
+
+    } catch (error: any) {
+      console.error(error);
+      return res.status(500).json({ success: false, error: error.message });
     }
   }
 
-  res.setHeader('Allow', ['GET', 'POST']);
-  res.status(405).end(`Method ${method} Not Allowed`);
+  res.status(405).json({ error: `Method ${method} Not Allowed` });
 }

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, Activity, ShieldAlert, DollarSign, Edit2, X, ShoppingBag } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Activity, ShieldAlert, DollarSign, Edit2, X, ShoppingBag, Cloud, CloudOff } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
-  const { netWorth, totalDebt, healthScore, transactions, currency, userName, creditScores, updateCreditScores, wishlist } = useFinance();
+  const { netWorth, totalDebt, healthScore, transactions, currency, userName, creditScores, updateCreditScores, wishlist, isCloudConnected } = useFinance();
   
   // Local state for credit score editing
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
@@ -72,8 +72,21 @@ export const Dashboard: React.FC = () => {
           </div>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Here's your financial overview for {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}.</p>
         </div>
-        <div className="text-sm font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg text-center md:text-right">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        <div className="flex flex-col md:items-end gap-2">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                {isCloudConnected ? (
+                    <>
+                       <Cloud className="w-4 h-4" /> Cloud Connected
+                    </>
+                ) : (
+                    <>
+                       <CloudOff className="w-4 h-4" /> Offline Mode
+                    </>
+                )}
+            </div>
+            <div className="text-sm font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg text-center md:text-right">
+                {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
         </div>
       </div>
 

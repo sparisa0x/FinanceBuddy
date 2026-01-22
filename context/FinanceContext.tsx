@@ -26,12 +26,13 @@ interface FinanceContextType {
   creditScores: { cibil: number; experian: number };
   updateCreditScores: (scores: { cibil: number; experian: number }) => void;
   isAuthenticated: boolean;
-  isAdmin: boolean; // New State
+  isAdmin: boolean; 
   login: (u: string, p: string) => Promise<{success: boolean; message?: string}>;
   register: (u: string, p: string, name: string, email: string) => Promise<{success: boolean; message?: string}>;
   changePassword: (newPass: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
+  isCloudConnected: boolean; // New State
   
   // Admin Functions
   pendingUsers: any[];
@@ -48,6 +49,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAdmin, setIsAdmin] = useState(false);
   const [authCreds, setAuthCreds] = useState({ u: '', p: '' });
   const [isLoading, setIsLoading] = useState(false);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
   
   // Admin State
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
@@ -64,6 +66,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const [userName, setUserName] = useState("Sriram Parisa");
   const currency = "₹";
+
+  // Check Cloud Connection on Mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const res = await fetch('/api/finance?action=ping');
+        if (res.ok) {
+           const data = await res.json();
+           if (data.success) setIsCloudConnected(true);
+        } else {
+           setIsCloudConnected(false);
+        }
+      } catch (e) {
+        setIsCloudConnected(false);
+        console.log("Running in offline mode (API not reachable)");
+      }
+    };
+    checkConnection();
+  }, []);
 
   // Derived Analytics
   const totalAssets = investments.reduce((acc, curr) => acc + curr.currentValue, 0) + 
@@ -107,20 +128,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     // 3. Attempt Cloud Sync
-    try {
-      const res = await fetch('/api/finance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          username: authCreds.u,
-          data: payload 
-        })
-      });
-      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
-         await res.json();
+    if (isCloudConnected) {
+      try {
+        const res = await fetch('/api/finance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            username: authCreds.u,
+            data: payload 
+          })
+        });
+        if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
+           await res.json();
+        }
+      } catch (e) {
+        console.warn("Cloud sync failed, data saved locally only.");
       }
-    } catch (e) {
-      console.warn("Cloud sync failed, data saved locally only.");
     }
   };
 
@@ -309,68 +332,71 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return { success: true };
       }
 
-      // 1. Check LocalStorage First (Offline support)
-      const localData = localStorage.getItem(`finance_user_${u}`);
-      if (localData) {
-        const parsed = JSON.parse(localData);
-        if (parsed.password && parsed.password === p) {
-           // Success Local Login
-           setIsAuthenticated(true);
-           setUserName(parsed.displayName || "User");
-           setIsAdmin(parsed.isAdmin || false); // Local admin check
-           setAuthCreds({ u, p });
-           setTransactions(parsed.transactions || []);
-           setDebts(parsed.debts || []);
-           setInvestments(parsed.investments || []);
-           setWishlist(parsed.wishlist || []);
-           setCreditScores(parsed.creditScores || { cibil: 750, experian: 780 });
-           setIsLoading(false);
-           return { success: true };
-        } else if (parsed.password) {
-           setIsLoading(false);
-           return { success: false, message: 'Invalid password (offline check)' };
+      // 1. Check Cloud Login first if connected
+      let cloudSuccess = false;
+      if (isCloudConnected) {
+        try {
+          const res = await fetch(`/api/finance?username=${u}&password=${p}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              cloudSuccess = true;
+              setIsAuthenticated(true);
+              setUserName(data.data.displayName || "Sriram Parisa");
+              setIsAdmin(data.data.isAdmin || false);
+              setAuthCreds({ u, p });
+
+              const dbData = data.data;
+              setTransactions(dbData.transactions || []);
+              setDebts(dbData.debts || []);
+              setInvestments(dbData.investments || []);
+              setWishlist(dbData.wishlist || []);
+              setCreditScores(dbData.creditScores || { cibil: 750, experian: 780 });
+              
+              // Sync cloud data to local for future offline use
+              localStorage.setItem(`finance_user_${u}`, JSON.stringify({ ...dbData, password: p }));
+              
+              setIsLoading(false);
+              return { success: true };
+            } else if (res.status === 403) {
+               setIsLoading(false);
+               return { success: false, message: 'Account pending approval. Please wait for admin verification email.' };
+            }
+          }
+        } catch (err) {
+          console.warn("Cloud login failed, trying local...");
         }
       }
 
-      // 2. Attempt Cloud Login
-      const res = await fetch(`/api/finance?username=${u}&password=${p}`);
-      
-      // Ensure we have a valid JSON response
-      if (!res.ok) {
-        if (res.status === 403) {
-           return { success: false, message: 'Account pending approval. Please wait for admin verification email.' };
+      // 2. Check LocalStorage (Offline support)
+      if (!cloudSuccess) {
+        const localData = localStorage.getItem(`finance_user_${u}`);
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (parsed.password && parsed.password === p) {
+             // Success Local Login
+             setIsAuthenticated(true);
+             setUserName(parsed.displayName || "User (Offline)");
+             setIsAdmin(parsed.isAdmin || false); 
+             setAuthCreds({ u, p });
+             setTransactions(parsed.transactions || []);
+             setDebts(parsed.debts || []);
+             setInvestments(parsed.investments || []);
+             setWishlist(parsed.wishlist || []);
+             setCreditScores(parsed.creditScores || { cibil: 750, experian: 780 });
+             setIsLoading(false);
+             return { success: true, message: "Logged in (Offline Mode)" };
+          } else {
+             setIsLoading(false);
+             return { success: false, message: 'Invalid password (Offline check)' };
+          }
         }
-        throw new Error(`Server returned ${res.status}`);
-      }
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid server response (not JSON)");
       }
 
-      const data = await res.json();
-
-      if (data.success) {
-        setIsAuthenticated(true);
-        setUserName(data.data.displayName || "Sriram Parisa");
-        setIsAdmin(data.data.isAdmin || false);
-        setAuthCreds({ u, p });
-
-        const dbData = data.data;
-        setTransactions(dbData.transactions || []);
-        setDebts(dbData.debts || []);
-        setInvestments(dbData.investments || []);
-        setWishlist(dbData.wishlist || []);
-        setCreditScores(dbData.creditScores || { cibil: 750, experian: 780 });
-        
-        // Sync cloud data to local for future offline use
-        localStorage.setItem(`finance_user_${u}`, JSON.stringify({ ...dbData, password: p }));
-
-        return { success: true };
-      }
-      return { success: false, message: data.message || 'Login failed' };
+      return { success: false, message: 'User not found or connection failed.' };
     } catch (err) {
       console.warn("Login fallback mode due to:", err);
-      return { success: false, message: 'Connection Error. Please ensure you are registered.' };
+      return { success: false, message: 'Connection Error.' };
     } finally {
       setIsLoading(false);
     }
@@ -385,6 +411,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // We will save to local, but mark as NOT authenticated in local logic until approved.
 
     try {
+      if (!isCloudConnected) {
+         return { success: false, message: "Cannot register in offline mode. Please connect to server." };
+      }
+
       const res = await fetch(`/api/finance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,7 +466,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       transactions, debts, investments, wishlist, currency, userName, setUserName,
       addTransaction, addDebt, updateDebt, deleteDebt, payEMI, addInvestment, addToWishlist, updateWishlistItem, deleteWishlistItem,
       healthScore, netWorth, totalDebt, monthlyEMI, creditScores, updateCreditScores,
-      isAuthenticated, isAdmin, login, register, changePassword, logout, isLoading,
+      isAuthenticated, isAdmin, login, register, changePassword, logout, isLoading, isCloudConnected,
       pendingUsers, fetchPendingUsers, approveUser, rejectUser
     }}>
       {children}
