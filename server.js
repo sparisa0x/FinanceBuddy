@@ -307,7 +307,6 @@ app.post('/api/finance', async (req, res) => {
       await sendOTPEmail(email, newOtp);
       return res.status(200).json({ success: true, message: 'New OTP sent to your email' });
     }
-    }
 
     // SYNC DATA
     if (username && data) {

@@ -318,7 +318,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendOTPEmail(email, newOtp);
         return res.status(200).json({ success: true, message: 'New OTP sent' });
       }
-      }
 
       // Sync Data
       const user = await UserData.findOneAndUpdate({ username }, { $set: data }, { new: true });
