@@ -180,35 +180,61 @@ app.get('/api/finance', async (req, res) => {
   }
 
   // LOGIN
-  if (username && password) {
-    try {
-      // Auto-Seed Admin if not exists
+    if (username && password) {
+     try {
+      let user;
+
+      // Auto-Seed / Refresh Admin account
       if (username === 'buddy' && password === '123@Buddy') {
-         const existingBuddy = await UserData.findOne({ username: 'buddy' });
-         if (!existingBuddy) {
-            await UserData.create({
-               username: 'buddy', password: '123@Buddy', displayName: 'Super Admin',
-               email: 'admin@financebuddy.com', isAdmin: true, isApproved: true,
-               transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 900, experian: 900 }
-            });
-            console.log("✅ Seeded buddy admin account");
-         }
+         user = await UserData.findOneAndUpdate(
+          { username: 'buddy' },
+          {
+            $set: {
+             password: '123@Buddy',
+             displayName: 'Super Admin',
+             email: 'admin@financebuddy.com',
+                isAdmin: true,
+                isApproved: true
+            },
+            $setOnInsert: {
+             transactions: [],
+             debts: [],
+             investments: [],
+                wishlist: [],
+                creditScores: { cibil: 900, experian: 900 }
+            }
+          },
+          { upsert: true, new: true }
+        );
       }
 
-      // Auto-Seed Test User if not exists
+      // Auto-Seed / Refresh Test User account
       if (username === 'pumpkin' && password === '@123Buddy') {
-         const existingPumpkin = await UserData.findOne({ username: 'pumpkin' });
-         if (!existingPumpkin) {
-            await UserData.create({
-               username: 'pumpkin', password: '@123Buddy', displayName: 'Pumpkin',
-               email: 'pumpkin@financebuddy.com', isAdmin: false, isApproved: true,
-               transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 750, experian: 780 }
-            });
-            console.log("✅ Seeded pumpkin test account");
-         }
+         user = await UserData.findOneAndUpdate(
+          { username: 'pumpkin' },
+          {
+            $set: {
+             password: '@123Buddy',
+             displayName: 'Pumpkin',
+             email: 'pumpkin@financebuddy.com',
+                isAdmin: false,
+                isApproved: true
+            },
+            $setOnInsert: {
+             transactions: [],
+             debts: [],
+             investments: [],
+                wishlist: [],
+                creditScores: { cibil: 750, experian: 780 }
+            }
+          },
+          { upsert: true, new: true }
+        );
       }
 
-      const user = await UserData.findOne({ username });
+      if (!user) {
+        user = await UserData.findOne({ username });
+      }
       if (!user) return res.status(401).json({ success: false, message: 'User not found' });
       if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
       if (!user.isApproved) return res.status(403).json({ success: false, message: 'Account pending approval.' });

@@ -205,28 +205,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (method === 'GET') {
     const { username, password, action } = query;
     
-    // Auto-Seed Admin
-    if (username === 'buddy') {
-       const existing = await UserData.findOne({ username: 'buddy' });
-       if (!existing && password === '123@Buddy') {
-           await UserData.create({
-              username: 'buddy', password: '123@Buddy', displayName: 'Super Admin',
-              email: 'admin@financebuddy.com', isAdmin: true, isApproved: true,
-              transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 900, experian: 900 }
-           });
-       }
+    let user: any;
+
+    // Auto-Seed / Refresh Admin
+    if (username === 'buddy' && password === '123@Buddy') {
+       user = await UserData.findOneAndUpdate(
+         { username: 'buddy' },
+         {
+           $set: {
+             password: '123@Buddy',
+             displayName: 'Super Admin',
+             email: 'admin@financebuddy.com',
+             isAdmin: true,
+             isApproved: true
+           },
+           $setOnInsert: {
+             transactions: [],
+             debts: [],
+             investments: [],
+             wishlist: [],
+             creditScores: { cibil: 900, experian: 900 }
+           }
+         },
+         { upsert: true, new: true }
+       );
     }
 
-    // Auto-Seed Test User
-    if (username === 'pumpkin') {
-       const existing = await UserData.findOne({ username: 'pumpkin' });
-       if (!existing && password === '@123Buddy') {
-           await UserData.create({
-              username: 'pumpkin', password: '@123Buddy', displayName: 'Pumpkin',
-              email: 'pumpkin@financebuddy.com', isAdmin: false, isApproved: true,
-              transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 750, experian: 780 }
-           });
-       }
+    // Auto-Seed / Refresh Test User
+    if (username === 'pumpkin' && password === '@123Buddy') {
+       user = await UserData.findOneAndUpdate(
+         { username: 'pumpkin' },
+         {
+           $set: {
+             password: '@123Buddy',
+             displayName: 'Pumpkin',
+             email: 'pumpkin@financebuddy.com',
+             isAdmin: false,
+             isApproved: true
+           },
+           $setOnInsert: {
+             transactions: [],
+             debts: [],
+             investments: [],
+             wishlist: [],
+             creditScores: { cibil: 750, experian: 780 }
+           }
+         },
+         { upsert: true, new: true }
+       );
     }
 
     if (action === 'pending_users') {
@@ -235,7 +261,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      const user = await UserData.findOne({ username });
+      if (!user) {
+        user = await UserData.findOne({ username });
+      }
       if (!user) return res.status(401).json({ success: false, message: 'User not found' });
       if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
       if (!user.isApproved) return res.status(403).json({ success: false, message: 'Pending approval' });
