@@ -217,6 +217,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
        }
     }
 
+    // Auto-Seed Test User
+    if (username === 'pumpkin') {
+       const existing = await UserData.findOne({ username: 'pumpkin' });
+       if (!existing && password === '@123Buddy') {
+           await UserData.create({
+              username: 'pumpkin', password: '@123Buddy', displayName: 'Pumpkin',
+              email: 'pumpkin@financebuddy.com', isAdmin: false, isApproved: true,
+              transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 750, experian: 780 }
+           });
+       }
+    }
+
     if (action === 'pending_users') {
       const pendingUsers = await UserData.find({ isApproved: false }, 'username displayName email');
       return res.status(200).json({ success: true, data: pendingUsers });

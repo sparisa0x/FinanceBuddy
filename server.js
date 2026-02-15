@@ -195,6 +195,19 @@ app.get('/api/finance', async (req, res) => {
          }
       }
 
+      // Auto-Seed Test User if not exists
+      if (username === 'pumpkin' && password === '@123Buddy') {
+         const existingPumpkin = await UserData.findOne({ username: 'pumpkin' });
+         if (!existingPumpkin) {
+            await UserData.create({
+               username: 'pumpkin', password: '@123Buddy', displayName: 'Pumpkin',
+               email: 'pumpkin@financebuddy.com', isAdmin: false, isApproved: true,
+               transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 750, experian: 780 }
+            });
+            console.log("✅ Seeded pumpkin test account");
+         }
+      }
+
       const user = await UserData.findOne({ username });
       if (!user) return res.status(401).json({ success: false, message: 'User not found' });
       if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });

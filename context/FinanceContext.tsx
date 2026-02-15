@@ -34,6 +34,8 @@ interface FinanceContextType {
   logout: () => void;
   isLoading: boolean;
   isCloudConnected: boolean;
+  authUsername: string;
+  userEmail: string;
   
   // Admin Functions
   pendingUsers: any[];
@@ -66,6 +68,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
   
   const [userName, setUserName] = useState("User");
+  const [userEmail, setUserEmail] = useState("");
   const currency = "₹";
 
   // Auth & Data Initialization Logic
@@ -115,10 +118,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (u === 'buddy' && p === '123@Buddy') {
           setIsAuthenticated(true);
           setUserName("Super Admin");
+          setUserEmail("admin@financebuddy.com");
           setIsAdmin(true);
           setAuthCreds({ u, p });
           setTransactions([]); setDebts([]); setInvestments([]); setWishlist([]);
           setCreditScores({ cibil: 900, experian: 900 });
+          localStorage.setItem('finance_session', JSON.stringify({ u, p }));
+          setIsLoading(false);
+          return { success: true };
+      }
+
+      // 0b. Test User Fallback
+      if (u === 'pumpkin' && p === '@123Buddy') {
+          setIsAuthenticated(true);
+          setUserName("Pumpkin");
+          setUserEmail("pumpkin@financebuddy.com");
+          setIsAdmin(false);
+          setAuthCreds({ u, p });
+          setTransactions([]); setDebts([]); setInvestments([]); setWishlist([]);
+          setCreditScores({ cibil: 750, experian: 780 });
           localStorage.setItem('finance_session', JSON.stringify({ u, p }));
           setIsLoading(false);
           return { success: true };
@@ -135,6 +153,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               
               setIsAuthenticated(true);
               setUserName(dbData.displayName || "User");
+              setUserEmail(dbData.email || "");
               setIsAdmin(dbData.isAdmin || false);
               setAuthCreds({ u, p });
 
@@ -165,6 +184,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (parsed.password === p) {
            setIsAuthenticated(true);
            setUserName(parsed.displayName || "User (Offline)");
+           setUserEmail(parsed.email || "");
            setIsAdmin(parsed.isAdmin || false);
            setAuthCreds({ u, p });
            
@@ -456,6 +476,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsAuthenticated(false);
     setIsAdmin(false);
     setUserName("Guest");
+    setUserEmail("");
     setTransactions([]); setDebts([]); setInvestments([]);
     setAuthCreds({ u: '', p: '' });
     localStorage.removeItem('finance_session');
@@ -467,6 +488,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       addTransaction, addDebt, updateDebt, deleteDebt, payEMI, addInvestment, addToWishlist, updateWishlistItem, deleteWishlistItem,
       healthScore, netWorth, totalDebt, monthlyEMI, creditScores, updateCreditScores,
       isAuthenticated, isAdmin, login, register, verifyOTP, resendOTP, changePassword, logout, isLoading, isCloudConnected,
+      authUsername: authCreds.u, userEmail,
       pendingUsers, fetchPendingUsers, approveUser, rejectUser
     }}>
       {children}
