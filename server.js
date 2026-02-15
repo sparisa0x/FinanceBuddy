@@ -22,22 +22,41 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-async function sendOTPEmail(email, otp) {
+function createMailer() {
   const SMTP_EMAIL = process.env.SMTP_EMAIL;
   const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
   if (!SMTP_EMAIL || !SMTP_PASSWORD) {
+    return null;
+  }
+
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const rawPort = process.env.SMTP_PORT;
+  const parsedPort = rawPort ? Number(rawPort) : 465;
+  const port = Number.isNaN(parsedPort) ? 465 : parsedPort;
+  const secure = process.env.SMTP_SECURE === 'true' ? true : process.env.SMTP_SECURE === 'false' ? false : port === 465;
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
+  });
+
+  return { transporter, fromAddress: SMTP_EMAIL };
+}
+
+async function sendOTPEmail(email, otp) {
+  const mailer = createMailer();
+  if (!mailer) {
     console.warn("SMTP not configured, OTP:", otp);
     return false;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
-  });
+  const { transporter, fromAddress } = mailer;
 
   try {
     await transporter.sendMail({
-      from: `"FinanceBuddy" <${SMTP_EMAIL}>`,
+      from: `"FinanceBuddy" <${fromAddress}>`,
       to: email,
       subject: `Your FinanceBuddy Verification Code: ${otp}`,
       html: `
@@ -125,20 +144,16 @@ const UserData = mongoose.models.UserData || mongoose.model('UserData', UserData
 
 // Email Helper
 async function sendApprovalEmail(newUser, host) {
-  const SMTP_EMAIL = process.env.SMTP_EMAIL;
-  const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
   const NOTIFICATION_EMAIL = 'sriramparisa0x@proton.me';
 
-  if (!SMTP_EMAIL || !SMTP_PASSWORD) return;
+  const mailer = createMailer();
+  if (!mailer) return;
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
-  });
+  const { transporter, fromAddress } = mailer;
 
   try {
     await transporter.sendMail({
-      from: SMTP_EMAIL,
+      from: fromAddress,
       to: NOTIFICATION_EMAIL,
       subject: `New User Registration: ${newUser.displayName}`,
       html: `

@@ -6,6 +6,11 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const MONGODB_URI = process.env.MONGODB_URI;
 const SMTP_EMAIL = process.env.SMTP_EMAIL; 
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD; 
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const rawSmtpPort = process.env.SMTP_PORT;
+const parsedSmtpPort = rawSmtpPort ? Number(rawSmtpPort) : undefined;
+const SMTP_PORT = parsedSmtpPort && !Number.isNaN(parsedSmtpPort) ? parsedSmtpPort : undefined;
+const SMTP_SECURE = process.env.SMTP_SECURE;
 const NOTIFICATION_EMAIL = 'sriramparisa0x@proton.me'; 
 
 // Caching the connection for Vercel "Hot" instances
@@ -107,20 +112,36 @@ function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-async function sendOTPEmail(email: string, otp: string): Promise<boolean> {
+function createMailer(): { transporter: nodemailer.Transporter; fromAddress: string } | null {
   if (!SMTP_EMAIL || !SMTP_PASSWORD) {
+    return null;
+  }
+
+  const parsedPort = SMTP_PORT && !Number.isNaN(SMTP_PORT) ? SMTP_PORT : 465;
+  const secure = SMTP_SECURE === 'true' ? true : SMTP_SECURE === 'false' ? false : parsedPort === 465;
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: parsedPort,
+    secure,
+    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
+  });
+
+  return { transporter, fromAddress: SMTP_EMAIL };
+}
+
+async function sendOTPEmail(email: string, otp: string): Promise<boolean> {
+  const mailer = createMailer();
+  if (!mailer) {
     console.warn("SMTP not configured, OTP:", otp);
     return false;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
-  });
+  const { transporter, fromAddress } = mailer;
 
   try {
     await transporter.sendMail({
-      from: `"FinanceBuddy" <${SMTP_EMAIL}>`,
+      from: `"FinanceBuddy" <${fromAddress}>`,
       to: email,
       subject: `Your FinanceBuddy Verification Code: ${otp}`,
       html: `
@@ -144,18 +165,16 @@ async function sendOTPEmail(email: string, otp: string): Promise<boolean> {
 }
 
 async function sendApprovalEmail(newUser: any, host: string) {
-  if (!SMTP_EMAIL || !SMTP_PASSWORD) return;
+  const mailer = createMailer();
+  if (!mailer) return;
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
-  });
+  const { transporter, fromAddress } = mailer;
 
   const approvalLink = `https://${host}/?tab=admin`; 
 
   try {
     await transporter.sendMail({
-      from: SMTP_EMAIL,
+      from: fromAddress,
       to: NOTIFICATION_EMAIL,
       subject: `New User Registration: ${newUser.displayName}`,
       html: `
