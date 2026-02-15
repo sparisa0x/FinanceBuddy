@@ -180,28 +180,28 @@ app.get('/api/finance', async (req, res) => {
   }
 
   // LOGIN
-    if (username && password) {
-     try {
+  if (username && password) {
+    try {
       let user;
 
       // Auto-Seed / Refresh Admin account
       if (username === 'buddy' && password === '123@Buddy') {
-         user = await UserData.findOneAndUpdate(
+        user = await UserData.findOneAndUpdate(
           { username: 'buddy' },
           {
             $set: {
-             password: '123@Buddy',
-             displayName: 'Super Admin',
-             email: 'admin@financebuddy.com',
-                isAdmin: true,
-                isApproved: true
+              password: '123@Buddy',
+              displayName: 'Super Admin',
+              email: 'admin@financebuddy.com',
+              isAdmin: true,
+              isApproved: true
             },
             $setOnInsert: {
-             transactions: [],
-             debts: [],
-             investments: [],
-                wishlist: [],
-                creditScores: { cibil: 900, experian: 900 }
+              transactions: [],
+              debts: [],
+              investments: [],
+              wishlist: [],
+              creditScores: { cibil: 900, experian: 900 }
             }
           },
           { upsert: true, new: true }
@@ -210,22 +210,22 @@ app.get('/api/finance', async (req, res) => {
 
       // Auto-Seed / Refresh Test User account
       if (username === 'pumpkin' && password === '@123Buddy') {
-         user = await UserData.findOneAndUpdate(
+        user = await UserData.findOneAndUpdate(
           { username: 'pumpkin' },
           {
             $set: {
-             password: '@123Buddy',
-             displayName: 'Pumpkin',
-             email: 'pumpkin@financebuddy.com',
-                isAdmin: false,
-                isApproved: true
+              password: '@123Buddy',
+              displayName: 'Pumpkin',
+              email: 'pumpkin@financebuddy.com',
+              isAdmin: false,
+              isApproved: true
             },
             $setOnInsert: {
-             transactions: [],
-             debts: [],
-             investments: [],
-                wishlist: [],
-                creditScores: { cibil: 750, experian: 780 }
+              transactions: [],
+              debts: [],
+              investments: [],
+              wishlist: [],
+              creditScores: { cibil: 750, experian: 780 }
             }
           },
           { upsert: true, new: true }
