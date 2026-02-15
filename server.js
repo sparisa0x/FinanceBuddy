@@ -14,6 +14,52 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// OTP Store (in-memory for simplicity, cleared on server restart)
+const otpStore = new Map(); // email -> { otp, username, password, displayName, email, expiresAt }
+
+// OTP Helper
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function sendOTPEmail(email, otp) {
+  const SMTP_EMAIL = process.env.SMTP_EMAIL;
+  const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
+  if (!SMTP_EMAIL || !SMTP_PASSWORD) {
+    console.warn("SMTP not configured, OTP:", otp);
+    return false;
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: SMTP_EMAIL, pass: SMTP_PASSWORD },
+  });
+
+  try {
+    await transporter.sendMail({
+      from: `"FinanceBuddy" <${SMTP_EMAIL}>`,
+      to: email,
+      subject: `Your FinanceBuddy Verification Code: ${otp}`,
+      html: `
+        <div style="font-family: 'Inter', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0f172a; color: #e2e8f0; border-radius: 16px;">
+          <h2 style="color: #818cf8; margin-bottom: 8px;">FinanceBuddy</h2>
+          <p style="margin-top: 0; color: #94a3b8;">Email Verification</p>
+          <div style="background: #1e293b; padding: 24px; border-radius: 12px; text-align: center; margin: 24px 0;">
+            <p style="color: #94a3b8; margin-top: 0;">Your verification code is:</p>
+            <h1 style="letter-spacing: 8px; color: #818cf8; font-size: 36px; margin: 16px 0;">${otp}</h1>
+            <p style="color: #64748b; font-size: 13px; margin-bottom: 0;">This code expires in 10 minutes.</p>
+          </div>
+          <p style="color: #64748b; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (error) {
+    console.error('OTP Email error:', error);
+    return false;
+  }
+}
+
 // 1. Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -29,7 +75,7 @@ if (!MONGODB_URI) {
 const UserDataSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  displayName: { type: String, default: 'Sriram Parisa' },
+  displayName: { type: String, default: 'User' },
   email: { type: String }, 
   isApproved: { type: Boolean, default: false }, 
   isAdmin: { type: Boolean, default: false }, 
@@ -137,11 +183,11 @@ app.get('/api/finance', async (req, res) => {
   if (username && password) {
     try {
       // Auto-Seed Admin if not exists
-      if (username === 'buddy' && password === '@123Buddy') {
+      if (username === 'buddy' && password === '123@Buddy') {
          const existingBuddy = await UserData.findOne({ username: 'buddy' });
          if (!existingBuddy) {
             await UserData.create({
-               username: 'buddy', password: '@123Buddy', displayName: 'Super Admin',
+               username: 'buddy', password: '123@Buddy', displayName: 'Super Admin',
                email: 'admin@financebuddy.com', isAdmin: true, isApproved: true,
                transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 900, experian: 900 }
             });
@@ -181,23 +227,73 @@ app.post('/api/finance', async (req, res) => {
        }
     }
 
-    // REGISTER
+    // REGISTER - Step 1: Send OTP
     if (action === 'register') {
       const existing = await UserData.findOne({ username });
       if (existing) return res.status(400).json({ success: false, message: 'Username taken' });
 
-      const isAdminEmail = email === 'sriramparisa0x@gmail.com';
+      // Check if email is already used
+      const emailExists = await UserData.findOne({ email });
+      if (emailExists) return res.status(400).json({ success: false, message: 'Email already registered' });
+
+      // Generate and send OTP
+      const otp = generateOTP();
+      otpStore.set(email, {
+        otp,
+        username,
+        password,
+        displayName: displayName || 'User',
+        email,
+        expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
+      });
+
+      const emailSent = await sendOTPEmail(email, otp);
+      if (!emailSent && process.env.SMTP_EMAIL) {
+        return res.status(500).json({ success: false, message: 'Failed to send verification email. Try again.' });
+      }
+
+      return res.status(200).json({ success: true, message: 'OTP sent to your email', requiresOTP: true });
+    }
+
+    // REGISTER - Step 2: Verify OTP
+    if (action === 'verify_otp') {
+      const { otp } = req.body;
+      const stored = otpStore.get(email);
+      
+      if (!stored) return res.status(400).json({ success: false, message: 'No OTP found. Please register again.' });
+      if (Date.now() > stored.expiresAt) {
+        otpStore.delete(email);
+        return res.status(400).json({ success: false, message: 'OTP expired. Please register again.' });
+      }
+      if (stored.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP. Try again.' });
+
+      // OTP verified — create user
       const newUser = await UserData.create({
-        username, password, email, displayName: displayName || 'User',
-        isApproved: isAdminEmail, isAdmin: isAdminEmail,
+        username: stored.username, password: stored.password, email: stored.email,
+        displayName: stored.displayName,
+        isApproved: false, isAdmin: false,
         transactions: [], debts: [], investments: [], wishlist: [],
         creditScores: { cibil: 750, experian: 780 }
       });
 
-      if (!isAdminEmail) {
-         await sendApprovalEmail(newUser, req.headers.host);
-      }
+      otpStore.delete(email);
+      await sendApprovalEmail(newUser, req.headers.host);
       return res.status(200).json({ success: true, data: newUser });
+    }
+
+    // RESEND OTP
+    if (action === 'resend_otp') {
+      const stored = otpStore.get(email);
+      if (!stored) return res.status(400).json({ success: false, message: 'No pending registration found.' });
+
+      const newOtp = generateOTP();
+      stored.otp = newOtp;
+      stored.expiresAt = Date.now() + 10 * 60 * 1000;
+      otpStore.set(email, stored);
+
+      await sendOTPEmail(email, newOtp);
+      return res.status(200).json({ success: true, message: 'New OTP sent to your email' });
+    }
     }
 
     // SYNC DATA

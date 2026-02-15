@@ -27,7 +27,9 @@ interface FinanceContextType {
   isAuthenticated: boolean;
   isAdmin: boolean; 
   login: (u: string, p: string) => Promise<{success: boolean; message?: string}>;
-  register: (u: string, p: string, name: string, email: string) => Promise<{success: boolean; message?: string}>;
+  register: (u: string, p: string, name: string, email: string) => Promise<{success: boolean; message?: string; requiresOTP?: boolean}>;
+  verifyOTP: (email: string, otp: string) => Promise<{success: boolean; message?: string}>;
+  resendOTP: (email: string) => Promise<{success: boolean; message?: string}>;
   changePassword: (newPass: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
@@ -63,7 +65,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     score: 0, status: 'Warning', color: '#f59e0b', factors: { savingsRate: 0, debtBurden: 0, emergencyCoverage: 0 } 
   });
   
-  const [userName, setUserName] = useState("Sriram Parisa");
+  const [userName, setUserName] = useState("User");
   const currency = "₹";
 
   // Auth & Data Initialization Logic
@@ -110,7 +112,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Internal Login function to reuse logic without triggering loop
   const loginInternal = async (u: string, p: string, cloudAvailable: boolean) => {
       // 0. Super Admin Backdoor
-      if (u === 'buddy' && p === '@123Buddy') {
+      if (u === 'buddy' && p === '123@Buddy') {
           setIsAuthenticated(true);
           setUserName("Super Admin");
           setIsAdmin(true);
@@ -404,10 +406,47 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       const data = await res.json();
       if (res.ok && data.success) {
-         if (data.data.isApproved) return login(u, p);
+         if (data.requiresOTP) {
+           return { success: true, message: 'Verification code sent to your email!', requiresOTP: true };
+         }
+         if (data.data?.isApproved) return login(u, p);
          return { success: true, message: 'Registration successful! Please wait for admin approval.' };
       }
       return { success: false, message: data.message || "Registration failed" };
+    } catch (err) {
+      return { success: false, message: 'Connection failed.' };
+    }
+  };
+
+  const verifyOTP = async (email: string, otp: string) => {
+    try {
+      const res = await fetch(`/api/finance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify_otp', email, otp })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true, message: 'Email verified! Your account is pending admin approval.' };
+      }
+      return { success: false, message: data.message || 'Verification failed' };
+    } catch (err) {
+      return { success: false, message: 'Connection failed.' };
+    }
+  };
+
+  const resendOTP = async (email: string) => {
+    try {
+      const res = await fetch(`/api/finance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend_otp', email })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true, message: 'New verification code sent!' };
+      }
+      return { success: false, message: data.message || 'Failed to resend OTP' };
     } catch (err) {
       return { success: false, message: 'Connection failed.' };
     }
@@ -427,7 +466,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       transactions, debts, investments, wishlist, currency, userName, setUserName,
       addTransaction, addDebt, updateDebt, deleteDebt, payEMI, addInvestment, addToWishlist, updateWishlistItem, deleteWishlistItem,
       healthScore, netWorth, totalDebt, monthlyEMI, creditScores, updateCreditScores,
-      isAuthenticated, isAdmin, login, register, changePassword, logout, isLoading, isCloudConnected,
+      isAuthenticated, isAdmin, login, register, verifyOTP, resendOTP, changePassword, logout, isLoading, isCloudConnected,
       pendingUsers, fetchPendingUsers, approveUser, rejectUser
     }}>
       {children}

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +7,15 @@
     <!-- Keeping Tailwind CDN for simplicity as requested, though moving to PostCSS in package.json is better for prod -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      // Apply saved theme or default to dark
+      (function() {
+        var theme = localStorage.getItem('finance_theme');
+        if (theme === 'light') {
+          document.documentElement.classList.remove('dark');
+        }
+        // else keep dark class from HTML
+      })();
+
       tailwind.config = {
         darkMode: 'class',
         theme: {
