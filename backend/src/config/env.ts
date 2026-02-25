@@ -18,6 +18,15 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE
   ? process.env.COOKIE_SECURE === 'true'
   : process.env.NODE_ENV === 'production';
 
+const parsedSmtpPort = Number(process.env.SMTP_PORT || 465);
+const SMTP_PORT = Number.isNaN(parsedSmtpPort) ? 465 : parsedSmtpPort;
+const SMTP_SECURE = process.env.SMTP_SECURE
+  ? process.env.SMTP_SECURE === 'true'
+  : SMTP_PORT === 465;
+
+const parsedOtpTtl = Number(process.env.OTP_TTL_MINUTES || 10);
+const OTP_TTL_MINUTES = Number.isNaN(parsedOtpTtl) ? 10 : parsedOtpTtl;
+
 export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT,
@@ -26,4 +35,11 @@ export const env = {
   REFRESH_TOKEN_SECRET: requireEnv('REFRESH_TOKEN_SECRET'),
   CLIENT_ORIGIN,
   COOKIE_SECURE,
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
+  SMTP_EMAIL: process.env.SMTP_EMAIL || '',
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
+  SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
+  SMTP_PORT,
+  SMTP_SECURE,
+  OTP_TTL_MINUTES,
 };
