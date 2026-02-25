@@ -113,34 +113,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   // Internal Login function to reuse logic without triggering loop
-  const loginInternal = async (u: string, p: string, cloudAvailable: boolean) => {
-      // 0. Super Admin Backdoor
-      if (u === 'buddy' && p === '123@Buddy') {
-          setIsAuthenticated(true);
-          setUserName("Super Admin");
-          setUserEmail("admin@financebuddy.com");
-          setIsAdmin(true);
-          setAuthCreds({ u, p });
-          setTransactions([]); setDebts([]); setInvestments([]); setWishlist([]);
-          setCreditScores({ cibil: 900, experian: 900 });
-          localStorage.setItem('finance_session', JSON.stringify({ u, p }));
-          setIsLoading(false);
-          return { success: true };
-      }
-
-      // 0b. Test User Fallback
-      if (u === 'pumpkin' && p === '@123Buddy') {
-          setIsAuthenticated(true);
-          setUserName("Pumpkin");
-          setUserEmail("pumpkin@financebuddy.com");
-          setIsAdmin(false);
-          setAuthCreds({ u, p });
-          setTransactions([]); setDebts([]); setInvestments([]); setWishlist([]);
-          setCreditScores({ cibil: 750, experian: 780 });
-          localStorage.setItem('finance_session', JSON.stringify({ u, p }));
-          setIsLoading(false);
-          return { success: true };
-      }
+    const loginInternal = async (u: string, p: string, cloudAvailable: boolean) => {
 
       // 1. Cloud Login
       if (cloudAvailable) {

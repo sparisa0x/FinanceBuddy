@@ -1,5 +1,8 @@
 import mongoose from 'mongoose';
 import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import Redis from 'ioredis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // Environment variables
@@ -105,8 +108,48 @@ const UserDataSchema = new mongoose.Schema({
 // Prevent model recompilation error in serverless environment
 const UserData: any = mongoose.models.UserData || mongoose.model('UserData', UserDataSchema);
 
-// OTP Store (in-memory — works with Vercel hot instances)
-const otpStore = new Map();
+// OTP Store: prefer Redis when `REDIS_URL` is provided, otherwise in-memory Map
+const REDIS_URL = process.env.REDIS_URL;
+const redisClient = REDIS_URL ? new Redis(REDIS_URL) : null;
+
+const otpStore = new Map(); // fallback
+
+async function setOTP(email: string, payload: any) {
+  if (redisClient) {
+    await redisClient.set(`otp:${email}`, JSON.stringify(payload), 'EX', 10 * 60);
+  } else {
+    otpStore.set(email, payload);
+  }
+}
+
+async function getOTP(email: string) {
+  if (redisClient) {
+    const v = await redisClient.get(`otp:${email}`);
+    return v ? JSON.parse(v) : null;
+  }
+  return otpStore.get(email);
+}
+
+async function delOTP(email: string) {
+  if (redisClient) {
+    await redisClient.del(`otp:${email}`);
+  } else {
+    otpStore.delete(email);
+  }
+}
+
+// Basic in-memory rate limiter per IP (lightweight)
+const rateMap = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(ip: string, limit = 200, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  const entry = rateMap.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) {
+    entry.count = 0; entry.resetAt = now + windowMs;
+  }
+  entry.count += 1;
+  rateMap.set(ip, entry);
+  return entry.count <= limit;
+}
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -223,56 +266,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // LOGIN & FETCH
   if (method === 'GET') {
     const { username, password, action } = query;
-    
     let user: any;
 
-    // Auto-Seed / Refresh Admin
-    if (username === 'buddy' && password === '123@Buddy') {
-       user = await UserData.findOneAndUpdate(
-         { username: 'buddy' },
-         {
-           $set: {
-             password: '123@Buddy',
-             displayName: 'Super Admin',
-             email: 'admin@financebuddy.com',
-             isAdmin: true,
-             isApproved: true
-           },
-           $setOnInsert: {
-             transactions: [],
-             debts: [],
-             investments: [],
-             wishlist: [],
-             creditScores: { cibil: 900, experian: 900 }
-           }
-         },
-         { upsert: true, new: true }
-       );
-    }
-
-    // Auto-Seed / Refresh Test User
-    if (username === 'pumpkin' && password === '@123Buddy') {
-       user = await UserData.findOneAndUpdate(
-         { username: 'pumpkin' },
-         {
-           $set: {
-             password: '@123Buddy',
-             displayName: 'Pumpkin',
-             email: 'pumpkin@financebuddy.com',
-             isAdmin: false,
-             isApproved: true
-           },
-           $setOnInsert: {
-             transactions: [],
-             debts: [],
-             investments: [],
-             wishlist: [],
-             creditScores: { cibil: 750, experian: 780 }
-           }
-         },
-         { upsert: true, new: true }
-       );
-    }
+    // Rate limit by IP
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit(ip)) return res.status(429).json({ success: false, message: 'Rate limit exceeded' });
 
     if (action === 'pending_users') {
       const pendingUsers = await UserData.find({ isApproved: false }, 'username displayName email');
@@ -284,10 +282,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         user = await UserData.findOne({ username });
       }
       if (!user) return res.status(401).json({ success: false, message: 'User not found' });
-      if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+      // Compare hashed password
+      const valid = await bcrypt.compare(password as string, user.password);
+      if (!valid) return res.status(401).json({ success: false, message: 'Invalid credentials' });
       if (!user.isApproved) return res.status(403).json({ success: false, message: 'Pending approval' });
 
-      return res.status(200).json({ success: true, data: user });
+      // Issue JWT
+      const token = jwt.sign({ username: user.username, isAdmin: !!user.isAdmin }, process.env.JWT_SECRET || 'dev_jwt_secret', { expiresIn: '7d' });
+      // Set httpOnly cookie (optional)
+      try {
+        const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+        res.setHeader('Set-Cookie', `fb_token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${secureFlag}`);
+      } catch (e) { /* ignore cookie set errors */ }
+
+      return res.status(200).json({ success: true, data: user, token });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
     }
@@ -298,6 +307,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { username, data, action, password, displayName, email } = body;
 
     try {
+      // Google OAuth sign-in (client sends `id_token` from Google)
+      if (action === 'google_oauth') {
+        const { id_token } = body;
+        if (!id_token) return res.status(400).json({ success: false, message: 'Missing id_token' });
+        // Verify token with Google
+        try {
+          const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${id_token}`);
+          if (!verifyRes.ok) return res.status(401).json({ success: false, message: 'Invalid Google token' });
+          const info = await verifyRes.json();
+          const email = info.email;
+          const name = info.name || info.email.split('@')[0];
+          if (!email) return res.status(400).json({ success: false, message: 'Google token did not include email' });
+
+          // Upsert user by email
+          let user = await UserData.findOne({ email });
+          if (!user) {
+            const randomPass = Math.random().toString(36) + Date.now().toString(36);
+            const hashed = await bcrypt.hash(randomPass, 10);
+            user = await UserData.create({ username: email.split('@')[0], password: hashed, displayName: name, email, isAdmin: false, isApproved: true, transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 750, experian: 780 } });
+          }
+
+          const token = jwt.sign({ username: user.username, isAdmin: !!user.isAdmin }, process.env.JWT_SECRET || 'dev_jwt_secret', { expiresIn: '7d' });
+          return res.status(200).json({ success: true, data: user, token });
+        } catch (e: any) {
+          console.error('Google verify error', e);
+          return res.status(500).json({ success: false, message: 'OAuth verification failed' });
+        }
+      }
+
+      // Create admin (protected)
+      if (action === 'create_admin') {
+         const { secret, newUsername, newPassword, newDisplayName, newEmail } = body;
+         if (!process.env.ADMIN_CREATION_SECRET || secret !== process.env.ADMIN_CREATION_SECRET) {
+           return res.status(403).json({ success: false, message: 'Forbidden' });
+         }
+         const existing = await UserData.findOne({ username: newUsername });
+         if (existing) return res.status(400).json({ success: false, message: 'Username already exists' });
+         const hashed = await bcrypt.hash(newPassword, 10);
+         const admin = await UserData.create({ username: newUsername, password: hashed, displayName: newDisplayName || 'Admin', email: newEmail || '', isAdmin: true, isApproved: true, transactions: [], debts: [], investments: [], wishlist: [], creditScores: { cibil: 900, experian: 900 } });
+         return res.status(200).json({ success: true, data: admin });
+      }
+
       if (action === 'approve_user') {
          const { targetUsername, decision } = body;
          if (decision === 'reject') {
@@ -317,11 +368,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (emailExists) return res.status(400).json({ success: false, message: 'Email already registered' });
 
         const otp = generateOTP();
-        otpStore.set(email, {
-          otp, username, password, displayName: displayName || 'User', email,
-          expiresAt: Date.now() + 10 * 60 * 1000
-        });
-
+        await setOTP(email, { otp, username, password, displayName: displayName || 'User', email, createdAt: Date.now() });
         const emailSent = await sendOTPEmail(email, otp);
         if (!emailSent && SMTP_EMAIL) {
           return res.status(500).json({ success: false, message: 'Failed to send verification email.' });
@@ -331,36 +378,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (action === 'verify_otp') {
         const { otp } = body;
-        const stored = otpStore.get(email);
+        const stored = await getOTP(email);
 
         if (!stored) return res.status(400).json({ success: false, message: 'No OTP found. Please register again.' });
-        if (Date.now() > stored.expiresAt) {
-          otpStore.delete(email);
+        // Redis TTL handles expiry; for in-memory fallback check createdAt
+        if (!redisClient && Date.now() - (stored.createdAt || 0) > 10 * 60 * 1000) {
+          await delOTP(email);
           return res.status(400).json({ success: false, message: 'OTP expired. Please register again.' });
         }
         if (stored.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP. Try again.' });
 
+        // Hash the password before storing
+        const hashed = await bcrypt.hash(stored.password, 10);
         const newUser = await UserData.create({
-          username: stored.username, password: stored.password, email: stored.email,
+          username: stored.username, password: hashed, email: stored.email,
           displayName: stored.displayName,
           isApproved: false, isAdmin: false,
           transactions: [], debts: [], investments: [], wishlist: [],
           creditScores: { cibil: 750, experian: 780 }
         });
 
-        otpStore.delete(email);
+        await delOTP(email);
         await sendApprovalEmail(newUser, req.headers.host || 'finance-buddy.vercel.app');
         return res.status(200).json({ success: true, data: newUser });
       }
 
       if (action === 'resend_otp') {
-        const stored = otpStore.get(email);
+        const stored = await getOTP(email);
         if (!stored) return res.status(400).json({ success: false, message: 'No pending registration found.' });
 
         const newOtp = generateOTP();
-        stored.otp = newOtp;
-        stored.expiresAt = Date.now() + 10 * 60 * 1000;
-        otpStore.set(email, stored);
+        stored.otp = newOtp; stored.createdAt = Date.now();
+        await setOTP(email, stored);
 
         await sendOTPEmail(email, newOtp);
         return res.status(200).json({ success: true, message: 'New OTP sent' });

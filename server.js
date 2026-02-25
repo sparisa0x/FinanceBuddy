@@ -3,6 +3,10 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 // Load environment variables
 dotenv.config();
@@ -13,6 +17,11 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(helmet());
+
+// Basic rate limiter for the local server
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
+app.use(limiter);
 
 // OTP Store (in-memory for simplicity, cleared on server restart)
 const otpStore = new Map(); // email -> { otp, username, password, displayName, email, expiresAt }
@@ -198,63 +207,21 @@ app.get('/api/finance', async (req, res) => {
   if (username && password) {
     try {
       let user;
-
-      // Auto-Seed / Refresh Admin account
-      if (username === 'buddy' && password === '123@Buddy') {
-        user = await UserData.findOneAndUpdate(
-          { username: 'buddy' },
-          {
-            $set: {
-              password: '123@Buddy',
-              displayName: 'Super Admin',
-              email: 'admin@financebuddy.com',
-              isAdmin: true,
-              isApproved: true
-            },
-            $setOnInsert: {
-              transactions: [],
-              debts: [],
-              investments: [],
-              wishlist: [],
-              creditScores: { cibil: 900, experian: 900 }
-            }
-          },
-          { upsert: true, new: true }
-        );
-      }
-
-      // Auto-Seed / Refresh Test User account
-      if (username === 'pumpkin' && password === '@123Buddy') {
-        user = await UserData.findOneAndUpdate(
-          { username: 'pumpkin' },
-          {
-            $set: {
-              password: '@123Buddy',
-              displayName: 'Pumpkin',
-              email: 'pumpkin@financebuddy.com',
-              isAdmin: false,
-              isApproved: true
-            },
-            $setOnInsert: {
-              transactions: [],
-              debts: [],
-              investments: [],
-              wishlist: [],
-              creditScores: { cibil: 750, experian: 780 }
-            }
-          },
-          { upsert: true, new: true }
-        );
-      }
-
       if (!user) {
         user = await UserData.findOne({ username });
       }
       if (!user) return res.status(401).json({ success: false, message: 'User not found' });
-      if (user.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) return res.status(401).json({ success: false, message: 'Invalid credentials' });
       if (!user.isApproved) return res.status(403).json({ success: false, message: 'Account pending approval.' });
 
-      return res.status(200).json({ success: true, data: user });
+      // Issue JWT
+      const token = jwt.sign({ username: user.username, isAdmin: !!user.isAdmin }, process.env.JWT_SECRET || 'dev_jwt_secret', { expiresIn: '7d' });
+      const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+      res.setHeader('Set-Cookie', `fb_token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${secureFlag}`);
+
+      return res.status(200).json({ success: true, data: user, token });
     } catch (error) {
       console.error(error);
       return res.status(500).json({ success: false, error: 'Database error' });
