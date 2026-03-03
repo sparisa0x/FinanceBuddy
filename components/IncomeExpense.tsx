@@ -1,141 +1,192 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
-import { Plus, ArrowDown, ArrowUp } from 'lucide-react';
+
+interface Transaction {
+  id: string;
+  type: 'income' | 'expense';
+  category: string;
+  amount: number;
+  date: string;
+  description: string | null;
+}
+
+const CATEGORIES = {
+  income:  ['Salary', 'Freelance', 'Investment Returns', 'Rental', 'Gift', 'Other'],
+  expense: ['Rent', 'Groceries', 'Utilities', 'Transport', 'Healthcare', 'Education', 'Entertainment', 'Shopping', 'EMI', 'Other'],
+};
+
+const fmt = (n: number) =>
+  '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.abs(n));
 
 export const IncomeExpense: React.FC = () => {
-  const { transactions, addTransaction, currency } = useFinance();
-  const [activeTab, setActiveTab] = useState<'income' | 'expense'>('expense');
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('');
+  const { user  } = useAuth();
+  const { refetch } = useFinance();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const [type,        setType]        = useState<'income' | 'expense'>('expense');
+  const [category,    setCategory]    = useState('Groceries');
+  const [amount,      setAmount]      = useState('');
+  const [date,        setDate]        = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false });
+    if (error) { toast.error(error.message); }
+    else        { setTransactions(data as Transaction[]); }
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Reset category when type changes
+  useEffect(() => {
+    setCategory(type === 'income' ? 'Salary' : 'Groceries');
+  }, [type]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !category) return;
-    addTransaction({
-      amount: parseFloat(amount),
-      category,
-      description,
-      type: activeTab,
-      date: new Date().toISOString().split('T')[0]
+    if (!user) return;
+    setSaving(true);
+    const { error } = await supabase.from('transactions').insert({
+      user_id: user.id,
+      type, category,
+      amount: Number(amount),
+      date,
+      description: description || null,
     });
-    setAmount('');
-    setDescription('');
-    setCategory('');
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Transaction added');
+      setAmount(''); setDescription(''); setShowForm(false);
+      await load(); refetch();
+    }
+    setSaving(false);
   };
 
-  const filteredTransactions = transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const handleDelete = async (id: string) => {
+    if (!user || !confirm('Delete this transaction?')) return;
+    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', user.id);
+    if (error) { toast.error(error.message); }
+    else        { toast.success('Deleted'); setTransactions(prev => prev.filter(t => t.id !== id)); refetch(); }
+  };
+
+  const totalIncome  = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      {/* Input Form */}
-      <div className="h-fit rounded-xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-        <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Add New {activeTab === 'income' ? 'Income' : 'Expense'}</h2>
-        
-        <div className="mb-6 flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
-          <button 
-            onClick={() => setActiveTab('income')}
-            className={`flex-1 rounded-md py-2 text-sm font-medium transition-all ${activeTab === 'income' ? 'bg-white text-emerald-600 shadow-sm dark:bg-slate-700 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'}`}
-          >
-            Income
-          </button>
-          <button 
-            onClick={() => setActiveTab('expense')}
-            className={`flex-1 rounded-md py-2 text-sm font-medium transition-all ${activeTab === 'expense' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-700 dark:text-rose-400' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'}`}
-          >
-            Expense
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Amount</label>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-2.5 text-slate-500">{currency}</span>
-              <input 
-                type="number" 
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                className="block w-full rounded-lg border border-slate-300 bg-white pl-8 py-2 text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                placeholder="0.00"
-                required
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Category</label>
-            <select 
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              required
-            >
-              <option value="">Select Category</option>
-              {activeTab === 'income' ? (
-                <>
-                  <option value="Salary">Salary</option>
-                  <option value="Freelance">Freelance</option>
-                  <option value="Business">Business</option>
-                  <option value="Passive">Passive</option>
-                </>
-              ) : (
-                <>
-                  <option value="Food">Food & Dining</option>
-                  <option value="Rent">Rent & Housing</option>
-                  <option value="Transport">Transport</option>
-                  <option value="Shopping">Shopping</option>
-                  <option value="Entertainment">Entertainment</option>
-                </>
-              )}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Description</label>
-            <input 
-              type="text" 
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="E.g., October Salary"
-            />
-          </div>
-          <button 
-            type="submit" 
-            className={`w-full rounded-lg py-2.5 font-semibold text-white shadow-md transition-colors ${activeTab === 'income' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
-          >
-            <Plus className="inline h-5 w-5 mr-2" />
-            Add {activeTab}
-          </button>
-        </form>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white">Income & Expenses</h1>
+        <button onClick={() => setShowForm(f => !f)}
+          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+          <Plus className="h-4 w-4" /> Add
+        </button>
       </div>
 
-      {/* Recent List */}
-      <div className="flex flex-col rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 h-[600px]">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recent Transactions</h2>
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-xl bg-slate-800 border border-slate-700 p-4">
+          <p className="text-xs text-slate-400 uppercase mb-1">Total Income</p>
+          <p className="text-lg font-bold text-green-400">{fmt(totalIncome)}</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {filteredTransactions.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 dark:hover:bg-slate-800">
-              <div className="flex items-center gap-4">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-full ${t.type === 'income' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'}`}>
-                  {t.type === 'income' ? <ArrowUp className="h-5 w-5" /> : <ArrowDown className="h-5 w-5" />}
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{t.category}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{t.description}</p>
-                </div>
+        <div className="rounded-xl bg-slate-800 border border-slate-700 p-4">
+          <p className="text-xs text-slate-400 uppercase mb-1">Total Expense</p>
+          <p className="text-lg font-bold text-red-400">{fmt(totalExpense)}</p>
+        </div>
+        <div className="rounded-xl bg-slate-800 border border-slate-700 p-4">
+          <p className="text-xs text-slate-400 uppercase mb-1">Net Savings</p>
+          <p className={`text-lg font-bold ${totalIncome - totalExpense >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
+            {fmt(totalIncome - totalExpense)}
+          </p>
+        </div>
+      </div>
+
+      {/* Add Form */}
+      {showForm && (
+        <div className="rounded-xl bg-slate-800 border border-slate-700 p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Type toggle */}
+            <div className="flex rounded-lg overflow-hidden border border-slate-700 w-fit">
+              {(['expense', 'income'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setType(t)}
+                  className={`px-5 py-2 text-sm font-semibold transition-colors ${type === t ? (t === 'income' ? 'bg-green-600 text-white' : 'bg-red-600 text-white') : 'bg-slate-700 text-slate-400 hover:text-white'}`}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Category</label>
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none">
+                  {CATEGORIES[type].map(c => <option key={c}>{c}</option>)}
+                </select>
               </div>
-              <div className="text-right">
-                <p className={`font-bold ${t.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                  {t.type === 'income' ? '+' : '-'}{currency}{t.amount.toLocaleString()}
-                </p>
-                <p className="text-xs text-slate-400">{t.date}</p>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Amount (₹)</label>
+                <input required type="number" min="1" value={amount} onChange={e => setAmount(e.target.value)}
+                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Date</label>
+                <input required type="date" value={date} onChange={e => setDate(e.target.value)}
+                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Description (optional)</label>
+                <input value={description} onChange={e => setDescription(e.target.value)}
+                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  placeholder="e.g. Monthly rent" />
+              </div>
+            </div>
+            <button type="submit" disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : <><Plus className="h-4 w-4" />Save</>}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Transactions list */}
+      {loading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-800" />)}</div>
+      ) : transactions.length === 0 ? (
+        <div className="rounded-xl bg-slate-800 border border-slate-700 p-8 text-center text-slate-500">No transactions yet</div>
+      ) : (
+        <div className="space-y-2">
+          {transactions.map(t => (
+            <div key={t.id} className="flex items-center justify-between rounded-xl bg-slate-800 border border-slate-700 px-5 py-3">
+              <div>
+                <p className="text-sm font-semibold text-white">{t.category}</p>
+                <p className="text-xs text-slate-500">{t.date}{t.description ? ` · ${t.description}` : ''}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`font-bold text-sm ${t.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
+                  {t.type === 'income' ? '+' : '-'}{fmt(t.amount)}
+                </span>
+                <button onClick={() => handleDelete(t.id)} className="text-slate-600 hover:text-red-400">
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}
         </div>
-      </div>
+      )}
     </div>
   );
 };

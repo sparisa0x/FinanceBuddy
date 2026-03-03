@@ -16,6 +16,7 @@ dist-ssr
 .env
 .env.local
 .env*.local
+backend/.env
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +28,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase
+supabase/.temp/
+
+# Scripts (helper only, not needed in prod)
+scripts/write_components.cjs

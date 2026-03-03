@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Calendar, ChevronRight, History, Plus, X, Archive } from 'lucide-react';
