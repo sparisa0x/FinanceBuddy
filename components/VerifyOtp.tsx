@@ -8,7 +8,7 @@ const MAX_ATTEMPTS = 3;
 const VerifyOtp: React.FC = () => {
   const location     = useLocation();
   const navigate     = useNavigate();
-  const { verifyOtp, resendOtp } = useAuth();
+  const { verifyOtp, resendOtp, user } = useAuth();
 
   // Guard: redirect if navigated here directly without email
   const state = location.state as { email?: string; type?: 'signup' | 'email' } | null;
@@ -18,6 +18,12 @@ const VerifyOtp: React.FC = () => {
   useEffect(() => {
     if (!email) navigate('/login', { replace: true });
   }, [email, navigate]);
+
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const [digits,   setDigits]   = useState(['', '', '', '', '', '']);
   const [error,    setError]    = useState('');
@@ -85,7 +91,12 @@ const VerifyOtp: React.FC = () => {
         return;
       }
 
-      setError(`${err} (${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining)`);
+      const invalidToken = /invalid|expired/i.test(err);
+      const baseMessage = invalidToken
+        ? 'Invalid/expired code. If your email says "Magic Link", click the login link in that email instead of entering digits.'
+        : err;
+
+      setError(`${baseMessage} (${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining)`);
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } else {
@@ -124,6 +135,9 @@ const VerifyOtp: React.FC = () => {
             We sent a 6-digit code to
           </p>
           <p className="text-indigo-400 text-sm font-medium mb-6 truncate">{email}</p>
+          <p className="text-xs text-slate-500 mb-4">
+            If you received a <strong>Magic Link</strong> email, open that link to complete login.
+          </p>
 
           {error && (
             <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
