@@ -132,6 +132,8 @@ export const Wishlist: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Priority</label>
                 <select value={priority} onChange={e => setPriority(e.target.value as 'low' | 'medium' | 'high')}
+                  title="Wishlist priority"
+                  aria-label="Wishlist priority"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none">
                   <option value="high">High</option>
                   <option value="medium">Medium</option>
@@ -141,6 +143,8 @@ export const Wishlist: React.FC = () => {
               <div className="col-span-2">
                 <label className="block text-xs text-slate-400 mb-1">Target Date (optional)</label>
                 <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)}
+                  title="Wishlist target date"
+                  aria-label="Wishlist target date"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
               </div>
             </div>
@@ -190,7 +194,7 @@ export const Wishlist: React.FC = () => {
                       <CheckCircle className="h-3.5 w-3.5 inline mr-1" />
                       {item.is_purchased ? 'Undo' : 'Mark Bought'}
                     </button>
-                    <button onClick={() => handleDelete(item.id)} className="text-slate-600 hover:text-red-400">
+                    <button onClick={() => handleDelete(item.id)} className="text-slate-600 hover:text-red-400" title="Delete wishlist item" aria-label="Delete wishlist item">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

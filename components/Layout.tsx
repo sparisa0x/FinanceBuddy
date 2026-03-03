@@ -54,6 +54,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             type="button"
             className="ml-auto lg:hidden text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             onClick={() => setIsSidebarOpen(false)}
+            title="Close sidebar"
+            aria-label="Close sidebar"
           >
             <X className="h-6 w-6" />
           </button>
@@ -107,6 +109,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             type="button"
             className="rounded-md p-2 text-slate-500 lg:hidden hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={() => setIsSidebarOpen(true)}
+            title="Open sidebar"
+            aria-label="Open sidebar"
           >
             <Menu className="h-6 w-6" />
           </button>

@@ -28,7 +28,6 @@ function HealthRing({ score, loading }: { score: number; loading: boolean }) {
         strokeDasharray={circ} strokeDashoffset={offset}
         strokeLinecap="round"
         transform={"rotate(-90 64 64)"}
-        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
       />
       <text x="64" y="60" textAnchor="middle" fill="white" fontSize="22" fontWeight="bold">{score}</text>
       <text x="64" y="77" textAnchor="middle" fill="#94a3b8" fontSize="11">{label}</text>
@@ -98,9 +97,13 @@ export const Dashboard: React.FC = () => {
                     <span className="text-xs text-slate-400">{bureau}</span>
                     <span className="text-sm font-bold text-white">{loading ? '—' : score ?? 'N/A'}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-700">
-                    <div className={`h-2 rounded-full transition-all ${col}`} style={{ width: bar + '%' }} />
-                  </div>
+                  <progress
+                    value={bar}
+                    max={100}
+                    className={`h-2 w-full rounded-full overflow-hidden ${col}`}
+                    aria-label={`${bureau} score progress`}
+                    title={`${bureau} score progress`}
+                  />
                 </div>
               );
             })}
@@ -112,12 +115,13 @@ export const Dashboard: React.FC = () => {
                 {loading ? '—' : `${(summary?.emi_burden_pct ?? 0).toFixed(1)}%`}
               </span>
             </div>
-            <div className="h-2 rounded-full bg-slate-700">
-              <div
-                className={`h-2 rounded-full ${(summary?.emi_burden_pct ?? 0) > 50 ? 'bg-red-500' : (summary?.emi_burden_pct ?? 0) > 30 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                style={{ width: Math.min(summary?.emi_burden_pct ?? 0, 100) + '%' }}
-              />
-            </div>
+            <progress
+              value={Math.min(summary?.emi_burden_pct ?? 0, 100)}
+              max={100}
+              className={`h-2 w-full rounded-full overflow-hidden ${(summary?.emi_burden_pct ?? 0) > 50 ? 'bg-red-500' : (summary?.emi_burden_pct ?? 0) > 30 ? 'bg-yellow-500' : 'bg-green-500'}`}
+              aria-label="EMI burden progress"
+              title="EMI burden progress"
+            />
           </div>
         </div>
       </div>

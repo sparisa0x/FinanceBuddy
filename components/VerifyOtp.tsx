@@ -144,6 +144,8 @@ const VerifyOtp: React.FC = () => {
                   value={d}
                   onChange={e => handleChange(i, e.target.value)}
                   onKeyDown={e => handleKeyDown(i, e)}
+                  title={`OTP digit ${i + 1}`}
+                  aria-label={`OTP digit ${i + 1}`}
                   className="w-11 h-14 rounded-xl bg-slate-800 border border-slate-700 text-center text-xl font-bold text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                 />
               ))}

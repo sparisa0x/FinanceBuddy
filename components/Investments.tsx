@@ -130,6 +130,8 @@ export const Investments: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Type</label>
                 <select value={type} onChange={e => setType(e.target.value)}
+                  title="Investment type"
+                  aria-label="Investment type"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none">
                   {Object.entries(INV_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
@@ -137,6 +139,8 @@ export const Investments: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Date</label>
                 <input type="date" required value={date} onChange={e => setDate(e.target.value)}
+                  title="Investment date"
+                  aria-label="Investment date"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
               </div>
               <div>
@@ -154,6 +158,8 @@ export const Investments: React.FC = () => {
               <div className="col-span-2">
                 <label className="block text-xs text-slate-400 mb-1">Notes (optional)</label>
                 <input value={notes} onChange={e => setNotes(e.target.value)}
+                  title="Investment notes"
+                  aria-label="Investment notes"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
               </div>
             </div>
@@ -196,7 +202,7 @@ export const Investments: React.FC = () => {
                       {gl >= 0 ? '+' : '-'}{fmt(Math.abs(gl))}
                     </div>
                   </div>
-                  <button onClick={() => handleDelete(inv.id)} className="text-slate-600 hover:text-red-400">
+                  <button onClick={() => handleDelete(inv.id)} className="text-slate-600 hover:text-red-400" title="Delete investment" aria-label="Delete investment">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>

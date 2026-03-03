@@ -149,6 +149,8 @@ export const DebtManager: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Start Date</label>
                 <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                  title="Debt start date"
+                  aria-label="Debt start date"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
               </div>
               <div>
@@ -189,7 +191,7 @@ export const DebtManager: React.FC = () => {
                     <span className="text-lg font-bold text-red-400">
                       {fmt(emi)}<span className="text-xs font-normal text-slate-500">/mo</span>
                     </span>
-                    <button onClick={() => handleDelete(debt.id)} className="text-slate-600 hover:text-red-400">
+                    <button onClick={() => handleDelete(debt.id)} className="text-slate-600 hover:text-red-400" title="Delete debt" aria-label="Delete debt">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -203,9 +205,13 @@ export const DebtManager: React.FC = () => {
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
                     <span>Progress</span><span>{paidPct}% paid</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-700">
-                    <div className="h-2 rounded-full bg-indigo-500 transition-all" style={{ width: paidPct + '%' }} />
-                  </div>
+                  <progress
+                    value={Math.max(0, Math.min(100, paidPct))}
+                    max={100}
+                    className="h-2 w-full rounded-full overflow-hidden bg-indigo-500"
+                    aria-label="Debt repayment progress"
+                    title="Debt repayment progress"
+                  />
                 </div>
               </div>
             );

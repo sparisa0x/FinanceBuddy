@@ -1,126 +1,75 @@
 # FinanceBuddy
 
-Personal finance tracker for small teams (5–20 users). Track income, expenses, debts, investments, and savings goals with a secure, OTP-authenticated dashboard.
+Personal finance tracker for small teams (5–20 users). Track income, expenses, debts, investments, and savings goals with secure Supabase auth.
 
-**Live:** https://financebuddy1.vercel.app  
-**API:** Render (Node.js + Supabase)
+Live app: <https://financebuddy1.vercel.app>
 
----
+## Tech stack
 
-## Tech Stack
+| Layer    | Technology                                       |
+| :------- | :----------------------------------------------- |
+| Frontend | React 18 + TypeScript + Vite + Tailwind          |
+| Database | Supabase (PostgreSQL)                            |
+| Auth     | Supabase Auth + OTP verification                 |
+| Hosting  | Vercel (frontend), Supabase (auth + database)    |
 
-| Layer    | Technology |
-|----------|-----------|
-| Frontend | React 18 + TypeScript + Vite + Tailwind |
-| Backend  | Node.js + Express (ESM) |
-| Database | Supabase (PostgreSQL) |
-| Auth     | Supabase Auth + OTP on every login |
-| Hosting  | Vercel (frontend) + Render (backend) |
-
----
-
-## Local Development
+## Local development
 
 ### Prerequisites
+
 - Node.js 18+
-- A Supabase project (free tier works)
+- A Supabase project
 
-### 1. Set up the database
+### 1) Set up database schema
 
-Run `supabase/schema.sql` in your Supabase project's **SQL Editor**.
+Run `supabase/schema.sql` in Supabase SQL Editor.
 
-### 2. Configure environment variables
+### 2) Configure environment variables
 
 ```bash
-# Frontend
 cp .env.example .env
-# Fill in VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_API_BASE_URL
-
-# Backend
-cp backend/.env.example backend/.env
-# Fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, FRONTEND_URL
 ```
 
-### 3. Install dependencies
+Set values in `.env`:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+### 3) Install and run
 
 ```bash
 npm install
-cd backend && npm install && cd ..
-```
-
-### 4. Run locally
-
-```bash
-# Terminal 1 – Backend
-cd backend && node src/server.js
-
-# Terminal 2 – Frontend
 npm run dev
 ```
 
-Frontend: http://localhost:5173  
-Backend: http://localhost:3001
+Local app: <http://localhost:5173>
 
----
+## Deployment (Vercel)
 
-## Deployment
-
-### Backend → Render
-1. Push repo to GitHub.
-2. Create a new **Web Service** on Render, point to the `backend/` directory.
-3. Set environment variables from `backend/.env.example`.
-4. `render.yaml` is pre-configured for zero-config deploy.
-
-### Frontend → Vercel
-1. Import the repo in Vercel.
+1. Import repo in Vercel.
 2. Set environment variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_API_BASE_URL` → your Render service URL
-3. `vercel.json` handles SPA routing automatically.
-
----
+3. Deploy using existing `vercel.json`.
 
 ## Features
 
-- **Auth** — Email + password with OTP on every login (60 s countdown, 3 max attempts)
-- **Dashboard** — Net worth trend, health score, recent transactions, EMI burden
-- **Income / Expense** — CRUD with category, monthly summary
-- **Debt Manager** — EMI calculator (reducing balance), repayment progress bar
-- **Investments** — Gain/loss per investment + portfolio total
-- **Wishlist** — Priority-sorted goals with target date countdown
-- **Export** — Download transactions, debts, investments as CSV
-- **Offline banner** — Automatic offline detection
+- OTP-based auth flow
+- Dashboard with health score and net-worth trend
+- Income/expense tracking
+- Debt manager with EMI insights
+- Investment performance tracking
+- Wishlist planning
+- CSV export
+- Offline status banner
 
----
+## Project structure
 
-## Project Structure
-
+```text
+components/   React UI components
+context/      Auth and finance contexts
+hooks/        Shared hooks
+lib/          Supabase client and helpers
+supabase/     SQL schema
+vercel.json   Vercel deployment config
 ```
-├── components/       # React UI components
-├── context/          # AuthContext + FinanceContext
-├── hooks/            # useOnlineStatus
-├── lib/              # supabaseClient.ts, api.ts
-├── supabase/         # schema.sql
-├── backend/
-│   ├── src/
-│   │   ├── server.js
-│   │   ├── routes/   # auth, transactions, debts, investments, wishlist, dashboard
-│   │   ├── lib/      # supabase.js, calculations.js
-│   │   └── middleware/
-│   └── package.json
-├── render.yaml
-├── vercel.json
-└── .env.example
-```
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`

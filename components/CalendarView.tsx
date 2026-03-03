@@ -98,11 +98,11 @@ export const CalendarView: React.FC = () => {
       <div className="flex items-center justify-between">
          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Financial Calendar</h2>
          <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-            <button onClick={prevMonth} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><ChevronLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" /></button>
+            <button onClick={prevMonth} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Previous month" aria-label="Previous month"><ChevronLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" /></button>
             <span className="font-semibold text-slate-900 dark:text-white w-32 text-center">
               {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
             </span>
-            <button onClick={nextMonth} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" /></button>
+            <button onClick={nextMonth} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Next month" aria-label="Next month"><ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" /></button>
          </div>
       </div>
 
@@ -130,7 +130,7 @@ export const CalendarView: React.FC = () => {
                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Add Entry</h3>
                    <p className="text-sm text-slate-500">{new Date(selectedDate!).toDateString()}</p>
                  </div>
-                 <button onClick={() => setIsModalOpen(false)}><X className="w-6 h-6 text-slate-400" /></button>
+                 <button onClick={() => setIsModalOpen(false)} title="Close modal" aria-label="Close modal"><X className="w-6 h-6 text-slate-400" /></button>
               </div>
 
               <form onSubmit={handleAdd} className="space-y-4">
@@ -141,7 +141,7 @@ export const CalendarView: React.FC = () => {
 
                  <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Amount ({currency})</label>
-                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" autoFocus required />
+                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" title="Transaction amount" aria-label="Transaction amount" autoFocus required />
                  </div>
 
                  <div>

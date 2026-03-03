@@ -132,6 +132,8 @@ export const IncomeExpense: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Category</label>
                 <select value={category} onChange={e => setCategory(e.target.value)}
+                  title="Transaction category"
+                  aria-label="Transaction category"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none">
                   {CATEGORIES[type].map(c => <option key={c}>{c}</option>)}
                 </select>
@@ -145,6 +147,8 @@ export const IncomeExpense: React.FC = () => {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Date</label>
                 <input required type="date" value={date} onChange={e => setDate(e.target.value)}
+                  title="Transaction date"
+                  aria-label="Transaction date"
                   className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none" />
               </div>
               <div>
@@ -179,7 +183,7 @@ export const IncomeExpense: React.FC = () => {
                 <span className={`font-bold text-sm ${t.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
                   {t.type === 'income' ? '+' : '-'}{fmt(t.amount)}
                 </span>
-                <button onClick={() => handleDelete(t.id)} className="text-slate-600 hover:text-red-400">
+                <button onClick={() => handleDelete(t.id)} className="text-slate-600 hover:text-red-400" title="Delete transaction" aria-label="Delete transaction">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
