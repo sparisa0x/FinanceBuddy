@@ -19,6 +19,7 @@ import { Profile } from './components/Profile';
 import { AdminPanel } from './components/AdminPanel';
 import { ExportData } from './components/ExportData';
 import { OfflineBanner } from './components/OfflineBanner';
+import { isSupabaseConfigured } from './lib/supabaseClient';
 import { FileText } from 'lucide-react';
 
 const AnalyticsView = () => (
@@ -53,6 +54,22 @@ const AppMain: React.FC = () => {
 };
 
 function App() {
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+        <div className="max-w-xl w-full rounded-2xl border border-amber-500/40 bg-slate-900 p-6">
+          <h1 className="text-xl font-semibold text-amber-300">App configuration missing</h1>
+          <p className="mt-3 text-sm text-slate-300">
+            Set <strong>VITE_SUPABASE_URL</strong> and <strong>VITE_SUPABASE_ANON_KEY</strong> in your deployment environment.
+          </p>
+          <p className="mt-2 text-xs text-slate-400">
+            Vercel → Project Settings → Environment Variables, then redeploy.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>
