@@ -49,6 +49,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
           <span className="text-lg font-bold text-slate-900 dark:text-white">FinanceBuddy</span>
           <button 
             type="button"
+            title="Close sidebar"
             className="ml-auto lg:hidden text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             onClick={() => setIsSidebarOpen(false)}
           >
@@ -102,6 +103,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900 shrink-0">
           <button 
             type="button"
+            title="Open sidebar"
             className="rounded-md p-2 text-slate-500 lg:hidden hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={() => setIsSidebarOpen(true)}
           >

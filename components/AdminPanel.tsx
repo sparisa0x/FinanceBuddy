@@ -8,11 +8,14 @@ export const AdminPanel: React.FC = () => {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
   const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
 
   const fetchAllUsers = useCallback(async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('id, name, username, email, created_at, approval_status, is_admin')
+      .select('id, name, username, email, created_at, status, role')
       .order('created_at', { ascending: false });
     if (data) setAllUsers(data);
   }, []);
@@ -22,6 +25,37 @@ export const AdminPanel: React.FC = () => {
     await Promise.all([fetchPendingUsers(), fetchAllUsers()]);
     setRefreshing(false);
   }, [fetchPendingUsers, fetchAllUsers]);
+
+  const handleApprove = async (id: string, name: string) => {
+    setActionLoading(prev => ({ ...prev, [id + '_approve']: true }));
+    setActionError('');
+    setActionSuccess('');
+    const ok = await approveUser(id);
+    setActionLoading(prev => ({ ...prev, [id + '_approve']: false }));
+    if (ok) {
+      setActionSuccess(`${name} has been approved.`);
+      // Also refresh the all-users list
+      fetchAllUsers();
+      setTimeout(() => setActionSuccess(''), 3000);
+    } else {
+      setActionError(`Failed to approve ${name}. Make sure the is_admin() SQL function and RLS policies are deployed in Supabase.`);
+    }
+  };
+
+  const handleReject = async (id: string, name: string) => {
+    setActionLoading(prev => ({ ...prev, [id + '_reject']: true }));
+    setActionError('');
+    setActionSuccess('');
+    const ok = await rejectUser(id);
+    setActionLoading(prev => ({ ...prev, [id + '_reject']: false }));
+    if (ok) {
+      setActionSuccess(`${name} has been rejected.`);
+      fetchAllUsers();
+      setTimeout(() => setActionSuccess(''), 3000);
+    } else {
+      setActionError(`Failed to reject ${name}. Make sure the is_admin() SQL function and RLS policies are deployed in Supabase.`);
+    }
+  };
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -73,6 +107,16 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       {/* Tabs */}
+      {actionError && (
+        <div className="rounded-lg border border-rose-900/30 bg-rose-900/20 p-3 text-sm text-rose-400">
+          {actionError}
+        </div>
+      )}
+      {actionSuccess && (
+        <div className="rounded-lg border border-emerald-900/30 bg-emerald-900/20 p-3 text-sm text-emerald-300">
+          {actionSuccess}
+        </div>
+      )}
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => setTab('pending')}
@@ -118,16 +162,18 @@ export const AdminPanel: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3 w-full sm:w-auto">
                     <button
-                      onClick={() => rejectUser(user.username)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 text-sm font-medium transition-colors"
+                      onClick={() => handleReject(user.id, user.name)}
+                      disabled={actionLoading[user.id + '_reject'] || actionLoading[user.id + '_approve']}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 text-sm font-medium transition-colors disabled:opacity-50"
                     >
-                      <XCircle className="w-4 h-4" /> Reject
+                      <XCircle className="w-4 h-4" /> {actionLoading[user.id + '_reject'] ? 'Rejecting...' : 'Reject'}
                     </button>
                     <button
-                      onClick={() => approveUser(user.username)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors shadow-sm"
+                      onClick={() => handleApprove(user.id, user.name)}
+                      disabled={actionLoading[user.id + '_approve'] || actionLoading[user.id + '_reject']}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors shadow-sm disabled:opacity-50"
                     >
-                      <CheckCircle className="w-4 h-4" /> Approve
+                      <CheckCircle className="w-4 h-4" /> {actionLoading[user.id + '_approve'] ? 'Approving...' : 'Approve'}
                     </button>
                   </div>
                 </div>
@@ -158,21 +204,21 @@ export const AdminPanel: React.FC = () => {
                     <td className="px-4 py-3 text-slate-500">@{u.username}</td>
                     <td className="px-4 py-3 text-slate-500">{u.email}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${statusBadge(u.approval_status)}`}>
-                        {u.approval_status}
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${statusBadge(u.status)}`}>
+                        {u.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {u.approval_status === 'pending' && (
+                      {u.status === 'pending' && (
                         <div className="flex gap-2">
-                          <button onClick={() => approveUser(u.username)} className="text-xs text-emerald-600 hover:underline font-medium">Approve</button>
-                          <button onClick={() => rejectUser(u.username)} className="text-xs text-rose-600 hover:underline font-medium">Reject</button>
+                          <button onClick={() => handleApprove(u.id, u.name)} disabled={!!actionLoading[u.id + '_approve']} className="text-xs text-emerald-600 hover:underline font-medium disabled:opacity-50">{actionLoading[u.id + '_approve'] ? 'Approving...' : 'Approve'}</button>
+                          <button onClick={() => handleReject(u.id, u.name)} disabled={!!actionLoading[u.id + '_reject']} className="text-xs text-rose-600 hover:underline font-medium disabled:opacity-50">{actionLoading[u.id + '_reject'] ? 'Rejecting...' : 'Reject'}</button>
                         </div>
                       )}
-                      {u.approval_status === 'rejected' && (
-                        <button onClick={() => approveUser(u.username)} className="text-xs text-emerald-600 hover:underline font-medium">Approve</button>
+                      {u.status === 'rejected' && (
+                        <button onClick={() => handleApprove(u.id, u.name)} disabled={!!actionLoading[u.id + '_approve']} className="text-xs text-emerald-600 hover:underline font-medium disabled:opacity-50">{actionLoading[u.id + '_approve'] ? 'Approving...' : 'Approve'}</button>
                       )}
-                      {u.is_admin && <span className="text-xs text-indigo-500 font-medium">Admin</span>}
+                      {u.role === 'admin' && <span className="text-xs text-indigo-500 font-medium">Admin</span>}
                     </td>
                   </tr>
                 ))}

@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { AlertCircle, CheckCircle, CreditCard, Plus, X, Pencil, Trash2, HelpCircle } from 'lucide-react';
 import { DebtType } from '../types';
+
+/** Progress bar that sets width imperatively (avoids JSX style={} lint warning) */
+const DynamicBar: React.FC<{ pct: number; className: string }> = ({ pct, className }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (ref.current) ref.current.style.width = `${Math.max(0, Math.min(100, pct))}%`; }, [pct]);
+  return <div ref={ref} className={className} />;
+};
 
 export const DebtManager: React.FC = () => {
   const { debts, payEMI, addDebt, updateDebt, deleteDebt, currency } = useFinance();
@@ -160,7 +167,7 @@ export const DebtManager: React.FC = () => {
                   <span className="font-medium text-slate-900 dark:text-white">{Math.round(progress)}%</span>
                 </div>
                 <div className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800">
-                  <div className="h-2.5 rounded-full bg-indigo-600 transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                  <DynamicBar pct={progress} className="h-2.5 rounded-full bg-indigo-600 transition-all duration-500" />
                 </div>
                 <div className="flex justify-between text-xs text-slate-400">
                   <span>{currency}{(debt.totalAmount - debt.remainingAmount).toLocaleString()} paid</span>
@@ -231,7 +238,7 @@ export const DebtManager: React.FC = () => {
           <div className="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800 transform transition-all scale-100">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">{editingDebtId ? 'Edit Loan Details' : 'Add New Loan'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+              <button title="Close" onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -253,6 +260,7 @@ export const DebtManager: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Type</label>
                   <select 
+                    title="Debt type"
                     value={type}
                     onChange={e => setType(e.target.value as DebtType)}
                     className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"

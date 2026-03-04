@@ -65,6 +65,7 @@ export const IncomeExpense: React.FC = () => {
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Category</label>
             <select 
+              title="Transaction category"
               value={category}
               onChange={e => setCategory(e.target.value)}
               className="mt-1 block w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"

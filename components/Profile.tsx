@@ -68,19 +68,21 @@ export const Profile: React.FC = () => {
                   <div className="flex items-center gap-2">
                      <input
                         type="text"
+                        title="Display name"
+                        placeholder="Enter your name"
                         value={tempName}
                         onChange={(e) => setTempName(e.target.value)}
                         className="text-xl font-bold rounded-lg border border-indigo-400 bg-white dark:bg-slate-800 px-3 py-1 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         autoFocus
                         onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
                      />
-                     <button onClick={handleSaveName} className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"><Save className="w-4 h-4" /></button>
-                     <button onClick={() => { setEditingName(false); setTempName(userName); }} className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20"><X className="w-4 h-4" /></button>
+                     <button title="Save name" onClick={handleSaveName} className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"><Save className="w-4 h-4" /></button>
+                     <button title="Cancel" onClick={() => { setEditingName(false); setTempName(userName); }} className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20"><X className="w-4 h-4" /></button>
                   </div>
                ) : (
                   <div className="flex items-center gap-2">
                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">{userName}</h3>
-                     <button onClick={() => { setEditingName(true); setTempName(userName); }} className="p-1 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"><Edit3 className="w-4 h-4" /></button>
+                     <button title="Edit name" onClick={() => { setEditingName(true); setTempName(userName); }} className="p-1 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"><Edit3 className="w-4 h-4" /></button>
                   </div>
                )}
                <div className="flex items-center gap-2 mt-1">

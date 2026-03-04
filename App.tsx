@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -16,6 +16,24 @@ import { LandingPage } from './components/LandingPage';
 import { Preloader } from './components/Preloader';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
+
+// ─── Hash-based routing helpers ───────────────────────────────────────────────
+const VALID_TABS = [
+  'dashboard', 'income-expense', 'debts', 'investments', 'wishlist',
+  'calendar', 'history', 'analytics', 'profile', 'import', 'admin',
+] as const;
+
+type Tab = (typeof VALID_TABS)[number];
+
+/** Read the current hash (e.g. "#/dashboard") and return the slug */
+function readHash(): string {
+  return (window.location.hash.replace(/^#\/?/, '').toLowerCase()) || '';
+}
+
+/** Set the hash without triggering a full page reload */
+function setHash(slug: string) {
+  window.history.replaceState(null, '', `#/${slug}`);
+}
 
 const ImportView = () => (
   <div className="flex flex-col items-center justify-center h-96 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
@@ -42,23 +60,70 @@ const AnalyticsView = () => (
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useFinance();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState<string>('dashboard');
   const [publicView, setPublicView] = useState<'landing' | 'auth'>('landing');
   const [showPreloader, setShowPreloader] = useState(true);
 
+  // Wrap setActiveTab to also update the URL hash
+  const setActiveTab = useCallback((tab: string) => {
+    setActiveTabState(tab);
+    setHash(tab);
+  }, []);
+
+  // On mount: read hash to restore tab or public view
+  useEffect(() => {
+    const hash = readHash();
+    if (VALID_TABS.includes(hash as Tab)) {
+      setActiveTabState(hash);
+    } else if (hash === 'login') {
+      setPublicView('auth');
+    }
+  }, []);
+
+  // Listen for browser back/forward hash changes
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = readHash();
+      if (isAuthenticated && VALID_TABS.includes(hash as Tab)) {
+        setActiveTabState(hash);
+      } else if (!isAuthenticated) {
+        if (hash === 'login') setPublicView('auth');
+        else setPublicView('landing');
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [isAuthenticated]);
+
+  // Preloader
   useEffect(() => {
     const timer = setTimeout(() => setShowPreloader(false), 1200);
     return () => clearTimeout(timer);
   }, []);
 
-  // Always land on dashboard after every login / sign-up
+  // On login: restore the hash tab or default to dashboard
   useEffect(() => {
-    if (isAuthenticated) setActiveTab('dashboard');
+    if (isAuthenticated) {
+      const hash = readHash();
+      if (VALID_TABS.includes(hash as Tab)) {
+        setActiveTabState(hash);
+      } else {
+        setActiveTabState('dashboard');
+        setHash('dashboard');
+      }
+    }
   }, [isAuthenticated]);
 
+  // When not authenticated, set hash to login or clear
   useEffect(() => {
-    if (isAuthenticated) setPublicView('landing');
-  }, [isAuthenticated]);
+    if (!isLoading && !isAuthenticated) {
+      if (publicView === 'auth') {
+        setHash('login');
+      } else {
+        setHash('');
+      }
+    }
+  }, [isAuthenticated, isLoading, publicView]);
 
   if (showPreloader) {
     return <Preloader />;
@@ -77,9 +142,14 @@ const AppContent: React.FC = () => {
 
   if (!isAuthenticated) {
     if (publicView === 'landing') {
-      return <LandingPage onGetStarted={() => setPublicView('auth')} onSignIn={() => setPublicView('auth')} />;
+      return (
+        <LandingPage
+          onGetStarted={() => { setPublicView('auth'); setHash('login'); }}
+          onSignIn={() => { setPublicView('auth'); setHash('login'); }}
+        />
+      );
     }
-    return <Login onBackHome={() => setPublicView('landing')} />;
+    return <Login onBackHome={() => { setPublicView('landing'); setHash(''); }} />;
   }
 
   return (

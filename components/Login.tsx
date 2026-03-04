@@ -1,653 +1,447 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import {
-  Lock, User, ArrowRight, ShieldCheck, Mail, CheckCircle,
-  Eye, EyeOff, KeyRound, RefreshCw, AlertCircle,
-} from 'lucide-react';
+import { Lock, User, Mail, ArrowRight, ShieldCheck, AlertCircle, CheckCircle, Eye, EyeOff, KeyRound, RotateCcw } from 'lucide-react';
 
-// ─── View states ─────────────────────────────────────────────────────────────
-// 'login'        → email/username + password form
-// 'login-otp'   → OTP input after successful password (2FA)
-// 'register'     → full registration form
-// 'register-otp' → OTP input after signup (email confirmation)
-// 'forgot-password' → request OTP for reset
-// 'forgot-otp'      → verify OTP and set new password
-type ViewMode = 'login' | 'login-otp' | 'register' | 'register-otp' | 'forgot-password' | 'forgot-otp';
+type AuthView = 'login' | 'register' | 'otp';
 
-// ─── OTP digit sub-component ─────────────────────────────────────────────────
-const OtpInput: React.FC<{
-  digits: string[];
-  onChange: (i: number, v: string) => void;
-  onKeyDown: (i: number, e: React.KeyboardEvent) => void;
-  onPaste: (e: React.ClipboardEvent) => void;
-  inputRefs: React.MutableRefObject<(HTMLInputElement | null)[]>;
-}> = ({ digits, onChange, onKeyDown, onPaste, inputRefs }) => (
-  <div className="flex justify-center gap-2 sm:gap-3" onPaste={onPaste}>
-    {digits.map((digit, i) => (
-      <input
-        key={i}
-        ref={el => { inputRefs.current[i] = el; }}
-        type="text"
-        inputMode="numeric"
-        maxLength={1}
-        value={digit}
-        onChange={e => onChange(i, e.target.value)}
-        onKeyDown={e => onKeyDown(i, e)}
-        className="w-11 h-13 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-bold rounded-lg border border-slate-700 bg-slate-800 text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-        autoFocus={i === 0}
-      />
-    ))}
-  </div>
-);
-
-// ─── Component ───────────────────────────────────────────────────────────────
 export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => {
-  const {
-    login,
-    verifyLoginOTP,
-    register,
-    verifyOTP,
-    resendOTP,
-    requestPasswordResetOTP,
-    verifyPasswordResetOTP,
-  } = useFinance();
+  const { login, register, verifyLoginOTP, resendOTP } = useFinance();
 
-  const [view, setView] = useState<ViewMode>('login');
-
-  // Shared
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   // Login fields
-  const [loginIdentifier, setLoginIdentifier] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPw, setShowLoginPw] = useState(false);
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Register fields
-  const [regFullName, setRegFullName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regUsername, setRegUsername] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPw, setRegConfirmPw] = useState('');
-  const [showRegPw, setShowRegPw] = useState(false);
-  const [showRegConfirm, setShowRegConfirm] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Forgot password fields
-  const [forgotIdentifier, setForgotIdentifier] = useState('');
-  const [resetPassword, setResetPassword] = useState('');
-  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
-  const [showResetPw, setShowResetPw] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-
-  // OTP shared state
+  // OTP fields
   const [pendingEmail, setPendingEmail] = useState('');
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
-  const [otpTimer, setOtpTimer] = useState(0);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [pendingFlow, setPendingFlow] = useState<'login' | 'signup'>('login');
+  const [otpCode, setOtpCode] = useState('');
+  const [resending, setResending] = useState(false);
+  const otpInputRef = useRef<HTMLInputElement>(null);
 
-  // ── OTP timer countdown ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (otpTimer <= 0) return;
-    const t = setInterval(() => setOtpTimer(p => p - 1), 1000);
-    return () => clearInterval(t);
-  }, [otpTimer]);
-
-  // ── OTP helpers ────────────────────────────────────────────────────────────
-  const resetOtp = () => {
-    setOtpDigits(['', '', '', '', '', '']);
-    setOtpTimer(300); // 5 minute display countdown
-    setTimeout(() => otpRefs.current[0]?.focus(), 50);
+  const clearMessages = () => {
+    setError('');
+    setSuccess('');
   };
 
-  const handleOtpChange = useCallback((i: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    const v = value.slice(-1);
-    setOtpDigits(prev => {
-      const next = [...prev];
-      next[i] = v;
-      return next;
-    });
-    if (v && i < 5) otpRefs.current[i + 1]?.focus();
-  }, []);
-
-  const handleOtpKeyDown = useCallback((i: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !otpDigits[i] && i > 0) otpRefs.current[i - 1]?.focus();
-  }, [otpDigits]);
-
-  const handleOtpPaste = useCallback((e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    const next = ['', '', '', '', '', ''];
-    for (let i = 0; i < pasted.length; i++) next[i] = pasted[i];
-    setOtpDigits(next);
-    if (pasted.length === 6) otpRefs.current[5]?.focus();
-  }, []);
-
-  const clearMessages = () => { setError(''); setSuccessMsg(''); };
-
-  // ── Switch views ───────────────────────────────────────────────────────────
-  const goTo = (v: ViewMode) => { clearMessages(); setView(v); };
-
-  // ── Submit: Login (step 1 – password) ─────────────────────────────────────
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginIdentifier.trim() || !loginPassword) { setError('Please fill in all fields.'); return; }
+  const switchView = (nextView: AuthView) => {
     clearMessages();
-    setLoading(true);
+    setView(nextView);
+    setShowPassword(false);
+    setShowRegPassword(false);
+    setShowConfirmPassword(false);
+    setOtpCode('');
+  };
 
-    const result = await login(loginIdentifier.trim(), loginPassword);
+  // ── Login handler ─────────────────────────────────────────────────────────
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!identifier.trim() || !password.trim()) {
+      setError('Please enter username/email and password.');
+      return;
+    }
+
+    setLoading(true);
+    const result = await login(identifier.trim(), password);
+    setLoading(false);
 
     if (!result.success) {
       setError(result.message || 'Login failed.');
-      setLoading(false);
-    } else if (result.requiresOTP && result.pendingEmail) {
-      // Password OK, OTP sent → go to 2FA screen
+      return;
+    }
+
+    if (result.requiresOTP && result.pendingEmail) {
+      // Password verified → OTP sent → switch to OTP view
       setPendingEmail(result.pendingEmail);
-      resetOtp();
-      setLoading(false);
-      setView('login-otp');
+      setPendingFlow('login');
+      setOtpCode('');
+      setSuccess('Verification code sent to your email.');
+      setView('otp');
+      setTimeout(() => otpInputRef.current?.focus(), 100);
+      return;
     }
-    // On unexpected success without OTP (shouldn't happen), keep loading
-    // so onAuthStateChange can flip isAuthenticated and unmount this component
+
+    setSuccess('Login successful. Redirecting...');
   };
 
-  // ── Submit: Login OTP (step 2 – 2FA) ──────────────────────────────────────
-  const handleLoginOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const otp = otpDigits.join('');
-    if (otp.length !== 6) { setError('Please enter the 6-digit code.'); return; }
-    clearMessages();
-    setLoading(true);
-
-    const result = await verifyLoginOTP(pendingEmail, otp);
-    if (!result.success) {
-      setError(result.message || 'Verification failed.');
-      setLoading(false);
-    }
-    // On success: keep loading; onAuthStateChange sets isAuthenticated → dashboard shows
-  };
-
-  // ── Submit: Register ───────────────────────────────────────────────────────
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
+  // ── Register handler ──────────────────────────────────────────────────────
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    // Client-side validations
-    if (!regFullName.trim()) { setError('Please enter your full name.'); return; }
-    if (!regEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) {
-      setError('Please enter a valid email address.'); return;
+    if (!name.trim() || !email.trim() || !username.trim() || !regPassword.trim()) {
+      setError('Please complete all fields.');
+      return;
     }
-    if (!regUsername.trim() || regUsername.length < 3) {
-      setError('Username must be at least 3 characters.'); return;
+
+    if (regPassword.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
     }
-    if (!/^[a-zA-Z0-9_]+$/.test(regUsername.trim())) {
-      setError('Username can only contain letters, numbers, and underscores.'); return;
+
+    if (regPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
     }
-    if (regPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (regPassword !== regConfirmPw) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
-    const result = await register(regUsername.trim(), regPassword, regFullName.trim(), regEmail.trim());
+    const result = await register(username.trim(), regPassword, name.trim(), email.trim());
+    setLoading(false);
 
     if (!result.success) {
       setError(result.message || 'Registration failed.');
-      setLoading(false);
-    } else if (result.requiresOTP) {
-      // Email OTP sent for confirmation
-      setPendingEmail(result.pendingEmail || regEmail.trim().toLowerCase());
-      resetOtp();
-      setLoading(false);
-      setView('register-otp');
-    } else if (result.message?.toLowerCase().includes('approval') || result.message?.toLowerCase().includes('wait')) {
-      // Auto-confirmed but pending admin approval
-      setSuccessMsg(result.message ?? '');
-      setView('login');
-      setLoading(false);
+      return;
     }
-    // On success without OTP: onAuthStateChange handles it
+
+    if (result.requiresOTP && result.pendingEmail) {
+      // Account created → OTP sent → switch to OTP view for email verification
+      setPendingEmail(result.pendingEmail);
+      setPendingFlow('signup');
+      setOtpCode('');
+      setSuccess(result.message || 'Verification code sent to your email.');
+      setView('otp');
+      setTimeout(() => otpInputRef.current?.focus(), 100);
+      return;
+    }
+
+    // Fallback: no OTP but still successful
+    setSuccess(result.message || 'Registration submitted. Your account is waiting for admin approval.');
+    setName('');
+    setEmail('');
+    setUsername('');
+    setRegPassword('');
+    setConfirmPassword('');
+    setView('login');
   };
 
-  // ── Submit: Register OTP ───────────────────────────────────────────────────
-  const handleRegisterOtpSubmit = async (e: React.FormEvent) => {
+  // ── OTP verify handler ────────────────────────────────────────────────────
+  const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    const otp = otpDigits.join('');
-    if (otp.length !== 6) { setError('Please enter the 6-digit code.'); return; }
     clearMessages();
-    setLoading(true);
 
-    const result = await verifyOTP(pendingEmail, otp);
+    if (!otpCode.trim() || otpCode.trim().length < 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setLoading(true);
+    const result = await verifyLoginOTP(pendingEmail, otpCode.trim());
+    setLoading(false);
+
     if (!result.success) {
       setError(result.message || 'Verification failed.');
-      setLoading(false);
-    } else if (result.message?.toLowerCase().includes('pending') || result.message?.toLowerCase().includes('approval')) {
-      setSuccessMsg(result.message ?? '');
-      setView('login');
-      setLoading(false);
-    }
-    // On approved: onAuthStateChange → dashboard
-  };
-
-  // ── Resend OTP ─────────────────────────────────────────────────────────────
-  const handleResend = async () => {
-    if (otpTimer > 0) return;
-    clearMessages();
-    setLoading(true);
-    const flow: 'login' | 'signup' = (view === 'login-otp' || view === 'forgot-otp') ? 'login' : 'signup';
-    const result = await resendOTP(pendingEmail, flow);
-    if (result.success) {
-      setSuccessMsg('New verification code sent!');
-      resetOtp();
-    } else {
-      setError(result.message || 'Failed to resend.');
-    }
-    setLoading(false);
-  };
-
-  // ── Format timer ───────────────────────────────────────────────────────────
-  const formatTimer = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!forgotIdentifier.trim()) {
-      setError('Please enter your email or username.');
       return;
     }
 
+    if (result.message) {
+      // E.g. "Email verified! Pending admin approval" — show message then go to login
+      setSuccess(result.message);
+      setTimeout(() => {
+        setOtpCode('');
+        switchView('login');
+      }, 3000);
+      return;
+    }
+
+    // Fully logged in
+    setSuccess('Verified! Redirecting...');
+  };
+
+  // ── Resend OTP handler ────────────────────────────────────────────────────
+  const handleResendOTP = async () => {
     clearMessages();
-    setLoading(true);
-    const result = await requestPasswordResetOTP(forgotIdentifier.trim());
+    setResending(true);
+    const result = await resendOTP(pendingEmail, pendingFlow);
+    setResending(false);
 
     if (!result.success) {
-      setError(result.message || 'Failed to send reset code.');
-      setLoading(false);
+      setError(result.message || 'Failed to resend code.');
       return;
     }
-
-    setPendingEmail(result.pendingEmail || forgotIdentifier.trim().toLowerCase());
-    resetOtp();
-    setView('forgot-otp');
-    setLoading(false);
+    setSuccess(result.message || 'New verification code sent!');
   };
 
-  const handleForgotOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const otp = otpDigits.join('');
-    if (otp.length !== 6) {
-      setError('Please enter the 6-digit code.');
-      return;
-    }
-    if (resetPassword.length < 8) {
-      setError('New password must be at least 8 characters.');
-      return;
-    }
-    if (resetPassword !== resetConfirmPassword) {
-      setError('New passwords do not match.');
-      return;
-    }
+  const inputBase = 'block w-full rounded-lg border border-slate-700 bg-slate-800 py-3 pl-10 pr-3 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
+  const passwordInputBase = 'block w-full rounded-lg border border-slate-700 bg-slate-800 py-3 pl-10 pr-10 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
 
-    clearMessages();
-    setLoading(true);
-    const result = await verifyPasswordResetOTP(pendingEmail, otp, resetPassword);
-
-    if (!result.success) {
-      setError(result.message || 'Password reset failed.');
-      setLoading(false);
-      return;
-    }
-
-    setSuccessMsg(result.message || 'Password reset successful. Please sign in.');
-    setResetPassword('');
-    setResetConfirmPassword('');
-    setOtpDigits(['', '', '', '', '', '']);
-    setView('login');
-    setLoading(false);
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render helpers
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const isOtpView = view === 'login-otp' || view === 'register-otp' || view === 'forgot-otp';
-
-  const headerTitle = {
-    'login': 'Finance Buddy',
-    'login-otp': 'Verify Identity',
-    'register': 'Create Account',
-    'register-otp': 'Verify Email',
-    'forgot-password': 'Reset Password',
-    'forgot-otp': 'Verify Reset Code',
-  }[view];
-
-  const headerSub = {
-    'login': 'Secure Personal Finance Intelligence',
-    'login-otp': `Enter the 6-digit code sent to ${pendingEmail}`,
-    'register': 'Join Finance Buddy today',
-    'register-otp': `Enter the 6-digit code sent to ${pendingEmail}`,
-    'forgot-password': 'Receive a one-time code to reset your password',
-    'forgot-otp': `Enter the reset code sent to ${pendingEmail}`,
-  }[view];
-
-  const pwStrength = (pw: string) => {
-    if (!pw) return null;
-    const strong = pw.length >= 12 && /[A-Z]/.test(pw) && /[0-9]/.test(pw) && /[^a-zA-Z0-9]/.test(pw);
-    const medium = pw.length >= 8;
-    return strong ? { label: 'Strong', color: 'text-emerald-400' }
-      : medium   ? { label: 'Medium', color: 'text-amber-400' }
-                 : { label: 'Weak',   color: 'text-rose-400' };
-  };
-
-  const inputBase = 'block w-full rounded-lg border border-slate-700 bg-slate-800 py-3 pl-10 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
+  const EyeToggle: React.FC<{ show: boolean; onToggle: () => void }> = ({ show, onToggle }) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      tabIndex={-1}
+      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors"
+    >
+      {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+  );
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-slate-950 px-4 py-8">
       <div className="w-full max-w-md animate-fade-in space-y-6 rounded-2xl bg-slate-900 p-8 shadow-2xl border border-slate-800">
-
         {onBackHome && (
           <button
             type="button"
             onClick={onBackHome}
             className="text-xs text-slate-400 hover:text-white transition-colors"
           >
-            ← Back to Home
+            &larr; Back to Home
           </button>
         )}
 
-        {/* Header */}
         <div className="text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-900/30">
-            {isOtpView ? <KeyRound className="h-8 w-8 text-indigo-400" /> : <ShieldCheck className="h-8 w-8 text-indigo-400" />}
+            <ShieldCheck className="h-8 w-8 text-indigo-400" />
           </div>
-          <h2 className="mt-4 text-2xl font-extrabold text-white">{headerTitle}</h2>
-          <p className="mt-1 text-sm text-slate-400">{headerSub}</p>
+          <h2 className="mt-4 text-2xl font-extrabold text-white">FinanceBuddy</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {view === 'login' ? 'Secure sign in to your account' : view === 'register' ? 'Create account and wait for admin approval' : 'Enter the verification code sent to your email'}
+          </p>
         </div>
 
-        {/* Alerts */}
         {error && (
           <div className="flex gap-2 rounded-lg border border-rose-900/30 bg-rose-900/20 p-3 text-sm text-rose-400">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" /><p>{error}</p>
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>{error}</p>
           </div>
         )}
-        {successMsg && (
+
+        {success && (
           <div className="flex gap-2 rounded-lg border border-emerald-900/30 bg-emerald-900/20 p-3 text-sm text-emerald-300">
-            <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" /><p>{successMsg}</p>
+            <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>{success}</p>
           </div>
         )}
 
-        {/* ── LOGIN FORM ─────────────────────────────────────────────────────── */}
-        {view === 'login' && (
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Email or Username</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
-                <input type="text" required autoComplete="username" value={loginIdentifier} onChange={e => setLoginIdentifier(e.target.value)}
-                  className={inputBase} placeholder="Enter email or username" />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Password</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
-                <input type={showLoginPw ? 'text' : 'password'} required autoComplete="current-password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
-                  className={`${inputBase} pr-10`} placeholder="Enter password" />
-                <button type="button" onClick={() => setShowLoginPw(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
-                  {showLoginPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-1 space-y-2">
-              <button type="submit" disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-                {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Verifying...</>
-                  : <>Sign In <ArrowRight className="h-4 w-4" /></>}
-              </button>
-              <p className="text-center text-sm text-slate-400">
-                After sign-in you'll receive a{' '}
-                <span className="font-medium text-indigo-400">one-time verification code</span> for security.
-              </p>
-              <button type="button" onClick={() => goTo('register')} className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-                New here? Create an account
-              </button>
-              <button type="button" onClick={() => goTo('forgot-password')} className="w-full text-center text-sm text-slate-400 hover:text-slate-200 font-medium transition-colors">
-                Forgot password?
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── LOGIN OTP FORM ─────────────────────────────────────────────────── */}
-        {view === 'login-otp' && (
-          <form onSubmit={handleLoginOtpSubmit} className="space-y-5">
-            <div className="rounded-lg bg-slate-800/60 border border-slate-700 p-3 text-xs text-slate-400 text-center">
-              A 6-digit code was sent to <span className="font-semibold text-slate-200">{pendingEmail}</span>.
-              It expires in <span className="text-indigo-400 font-semibold">5 minutes</span>.
-            </div>
-
-            <OtpInput digits={otpDigits} onChange={handleOtpChange} onKeyDown={handleOtpKeyDown} onPaste={handleOtpPaste} inputRefs={otpRefs} />
-
-            <button type="submit" disabled={loading || otpDigits.join('').length !== 6}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-              {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Verifying...</>
-                : <>Verify &amp; Sign In <ArrowRight className="h-4 w-4" /></>}
-            </button>
-
-            <div className="flex items-center justify-between text-sm">
-              <button type="button" onClick={() => { clearMessages(); setView('login'); }}
-                className="text-slate-400 hover:text-white transition-colors">← Back to login</button>
-              <button type="button" disabled={otpTimer > 0} onClick={handleResend}
-                className={`flex items-center gap-1 font-medium transition-colors ${otpTimer > 0 ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'}`}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                {otpTimer > 0 ? `Resend in ${formatTimer(otpTimer)}` : 'Resend Code'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── REGISTER FORM ─────────────────────────────────────────────────── */}
-        {view === 'register' && (
-          <form onSubmit={handleRegisterSubmit} className="space-y-4">
-            {/* Full Name */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Full Name</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
-                <input type="text" required autoComplete="name" value={regFullName} onChange={e => setRegFullName(e.target.value)}
-                  className={inputBase} placeholder="Your full name" />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Email</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Mail className="h-5 w-5 text-slate-500" /></div>
-                <input type="email" required autoComplete="email" value={regEmail} onChange={e => setRegEmail(e.target.value)}
-                  className={inputBase} placeholder="you@example.com" />
-              </div>
-            </div>
-
-            {/* Username */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Username</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <span className="text-slate-500 text-sm font-medium">@</span>
-                </div>
-                <input type="text" required autoComplete="username" value={regUsername}
-                  onChange={e => setRegUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
-                  className={inputBase} placeholder="letters, numbers, underscores" minLength={3} maxLength={30} />
-              </div>
-              {regUsername && regUsername.length < 3 && (
-                <p className="mt-1 text-xs text-amber-400">Minimum 3 characters.</p>
-              )}
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Password</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
-                <input type={showRegPw ? 'text' : 'password'} required autoComplete="new-password"
-                  value={regPassword} onChange={e => setRegPassword(e.target.value)}
-                  className={`${inputBase} pr-10`} placeholder="Min 8 characters" minLength={8} />
-                <button type="button" onClick={() => setShowRegPw(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
-                  {showRegPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-              {regPassword && (() => { const s = pwStrength(regPassword); return s ? <p className={`mt-1 text-xs font-medium ${s.color}`}>Strength: {s.label}</p> : null; })()}
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Confirm Password</label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
-                <input type={showRegConfirm ? 'text' : 'password'} required autoComplete="new-password"
-                  value={regConfirmPw} onChange={e => setRegConfirmPw(e.target.value)}
-                  className={`${inputBase} pr-10`} placeholder="Repeat password" />
-                <button type="button" onClick={() => setShowRegConfirm(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
-                  {showRegConfirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-              {regConfirmPw && regPassword !== regConfirmPw && (
-                <p className="mt-1 text-xs text-rose-400">Passwords do not match.</p>
-              )}
-            </div>
-
-            <div className="pt-1 space-y-2">
-              <button type="submit" disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-                {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Creating account...</>
-                  : <>Send Verification Code <ArrowRight className="h-4 w-4" /></>}
-              </button>
-              <button type="button" onClick={() => goTo('login')} className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-                Already have an account? Sign in
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── REGISTER OTP FORM ─────────────────────────────────────────────── */}
-        {view === 'register-otp' && (
-          <form onSubmit={handleRegisterOtpSubmit} className="space-y-5">
-            <div className="rounded-lg bg-slate-800/60 border border-slate-700 p-3 text-xs text-slate-400 text-center">
-              A verification code was sent to <span className="font-semibold text-slate-200">{pendingEmail}</span>.
-              It expires in <span className="text-indigo-400 font-semibold">5 minutes</span>.
-            </div>
-
-            <OtpInput digits={otpDigits} onChange={handleOtpChange} onKeyDown={handleOtpKeyDown} onPaste={handleOtpPaste} inputRefs={otpRefs} />
-
-            <button type="submit" disabled={loading || otpDigits.join('').length !== 6}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-              {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Verifying...</>
-                : <>Verify Email <ArrowRight className="h-4 w-4" /></>}
-            </button>
-
-            <div className="flex items-center justify-between text-sm">
-              <button type="button" onClick={() => { clearMessages(); setView('register'); }}
-                className="text-slate-400 hover:text-white transition-colors">← Back to register</button>
-              <button type="button" disabled={otpTimer > 0} onClick={handleResend}
-                className={`flex items-center gap-1 font-medium transition-colors ${otpTimer > 0 ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'}`}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                {otpTimer > 0 ? `Resend in ${formatTimer(otpTimer)}` : 'Resend Code'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── FORGOT PASSWORD REQUEST FORM ─────────────────────────────────── */}
-        {view === 'forgot-password' && (
-          <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+        {view === 'login' ? (
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-300">Email or Username</label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
                 <input
+                  title="Email or Username"
                   type="text"
                   required
-                  value={forgotIdentifier}
-                  onChange={e => setForgotIdentifier(e.target.value)}
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className={inputBase}
                   placeholder="Enter email or username"
                 />
               </div>
             </div>
 
-            <div className="pt-1 space-y-2">
-              <button type="submit" disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-                {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Sending code...</>
-                  : <>Send Reset Code <ArrowRight className="h-4 w-4" /></>}
-              </button>
-              <button type="button" onClick={() => goTo('login')} className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-                Back to sign in
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── FORGOT PASSWORD OTP FORM ─────────────────────────────────────── */}
-        {view === 'forgot-otp' && (
-          <form onSubmit={handleForgotOtpSubmit} className="space-y-5">
-            <div className="rounded-lg bg-slate-800/60 border border-slate-700 p-3 text-xs text-slate-400 text-center">
-              A reset code was sent to <span className="font-semibold text-slate-200">{pendingEmail}</span>.
-              It expires in <span className="text-indigo-400 font-semibold">5 minutes</span>.
-            </div>
-
-            <OtpInput digits={otpDigits} onChange={handleOtpChange} onKeyDown={handleOtpKeyDown} onPaste={handleOtpPaste} inputRefs={otpRefs} />
-
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">New Password</label>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Password</label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
                 <input
-                  type={showResetPw ? 'text' : 'password'}
+                  title="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={passwordInputBase}
+                  placeholder="Enter password"
+                />
+                <EyeToggle show={showPassword} onToggle={() => setShowPassword(v => !v)} />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+            >
+              {loading ? 'Verifying...' : <>Sign In <ArrowRight className="h-4 w-4" /></>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => switchView('register')}
+              className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+            >
+              New here? Create an account
+            </button>
+          </form>
+        ) : view === 'register' ? (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Full Name</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  title="Full Name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={inputBase}
+                  placeholder="Your full name"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Email</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Mail className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  title="Email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={inputBase}
+                  placeholder="you@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Username</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  title="Username"
+                  type="text"
+                  required
+                  minLength={3}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                  className={inputBase}
+                  placeholder="letters, numbers, underscores"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Password</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  title="Registration Password"
+                  type={showRegPassword ? 'text' : 'password'}
                   required
                   minLength={8}
-                  value={resetPassword}
-                  onChange={e => setResetPassword(e.target.value)}
-                  className={`${inputBase} pr-10`}
-                  placeholder="Enter new password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  className={passwordInputBase}
+                  placeholder="Min 8 characters"
                 />
-                <button type="button" onClick={() => setShowResetPw(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
-                  {showResetPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
+                <EyeToggle show={showRegPassword} onToggle={() => setShowRegPassword(v => !v)} />
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">Confirm New Password</label>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Confirm Password</label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
                 <input
-                  type={showResetConfirm ? 'text' : 'password'}
+                  title="Confirm Password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   required
-                  value={resetConfirmPassword}
-                  onChange={e => setResetConfirmPassword(e.target.value)}
-                  className={`${inputBase} pr-10`}
-                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={passwordInputBase}
+                  placeholder="Repeat password"
                 />
-                <button type="button" onClick={() => setShowResetConfirm(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
-                  {showResetConfirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
+                <EyeToggle show={showConfirmPassword} onToggle={() => setShowConfirmPassword(v => !v)} />
               </div>
             </div>
 
-            <button type="submit" disabled={loading || otpDigits.join('').length !== 6}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
-              {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Resetting...</>
-                : <>Verify &amp; Reset Password <ArrowRight className="h-4 w-4" /></>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+            >
+              {loading ? 'Creating account...' : <>Register <ArrowRight className="h-4 w-4" /></>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => switchView('login')}
+              className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+            >
+              Already have an account? Sign in
+            </button>
+          </form>
+        ) : (
+          /* ── OTP Verification View ──────────────────────────────────────── */
+          <form onSubmit={handleVerifyOTP} className="space-y-4">
+            <div className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-900/30 mb-3">
+                <KeyRound className="h-6 w-6 text-indigo-400" />
+              </div>
+              <p className="text-sm text-slate-400">
+                We sent a 6-digit code to <span className="font-semibold text-indigo-300">{pendingEmail}</span>
+              </p>
+              <p className="text-xs text-slate-500 mt-1">Check your inbox (and spam folder).</p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Verification Code</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><KeyRound className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  ref={otpInputRef}
+                  title="Verification Code"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  required
+                  autoComplete="one-time-code"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className={inputBase}
+                  placeholder="Enter 6-digit code"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || otpCode.trim().length < 6}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+            >
+              {loading ? 'Verifying...' : <>Verify Code <ArrowRight className="h-4 w-4" /></>}
             </button>
 
             <div className="flex items-center justify-between text-sm">
-              <button type="button" onClick={() => { clearMessages(); setView('forgot-password'); }}
-                className="text-slate-400 hover:text-white transition-colors">← Back</button>
-              <button type="button" disabled={otpTimer > 0} onClick={handleResend}
-                className={`flex items-center gap-1 font-medium transition-colors ${otpTimer > 0 ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'}`}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                {otpTimer > 0 ? `Resend in ${formatTimer(otpTimer)}` : 'Resend Code'}
+              <button
+                type="button"
+                onClick={handleResendOTP}
+                disabled={resending}
+                className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-medium transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className={`h-3.5 w-3.5 ${resending ? 'animate-spin' : ''}`} />
+                {resending ? 'Sending...' : 'Resend Code'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchView(pendingFlow === 'login' ? 'login' : 'register')}
+                className="text-slate-400 hover:text-slate-300 transition-colors"
+              >
+                &larr; Go back
               </button>
             </div>
           </form>
