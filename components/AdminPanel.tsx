@@ -1,13 +1,27 @@
 import React, { useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { CheckCircle, XCircle, User, Mail, ShieldAlert } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export const AdminPanel: React.FC = () => {
   const { pendingUsers, fetchPendingUsers, approveUser, rejectUser, isAdmin } = useFinance();
 
   useEffect(() => {
-    fetchPendingUsers();
-  }, []);
+      if (!isAdmin) return;
+
+      fetchPendingUsers();
+
+      const channel = supabase
+         .channel('pending-profiles-updates')
+         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+            fetchPendingUsers();
+         })
+         .subscribe();
+
+      return () => {
+         supabase.removeChannel(channel);
+      };
+   }, [isAdmin]);
 
   if (!isAdmin) {
     return (

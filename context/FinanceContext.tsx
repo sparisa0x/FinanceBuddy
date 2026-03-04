@@ -84,6 +84,14 @@ const dbToInvestment = (r: any): Investment => ({
   investedAmount: Number(r.invested_amount),
   currentValue: Number(r.current_value),
   lastUpdated: r.last_updated ?? new Date().toISOString().split('T')[0],
+  goalName: r.goal_name ?? '',
+  targetValue: Number(r.target_value ?? 0),
+  expectedAnnualReturn: Number(r.expected_annual_return ?? 0),
+  tenureMonths: Number(r.tenure_months ?? 0),
+  monthlyContribution: Number(r.monthly_contribution ?? 0),
+  interestRate: Number(r.interest_rate ?? 0),
+  riskLevel: r.risk_level ?? 'medium',
+  notes: r.notes ?? '',
 });
 
 const dbToWishlistItem = (r: any): WishlistItem => ({
@@ -100,6 +108,9 @@ const dbToWishlistItem = (r: any): WishlistItem => ({
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ROOT_ADMIN_EMAIL = 'sriramparisa0x@gmail.com';
+  const ROOT_ADMIN_USERNAME = 'buddy';
+
   // Auth
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -141,10 +152,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       .single();
 
     if (data && !error) {
+      const normalizedEmail = (data.email || '').toLowerCase();
+      const normalizedUsername = (data.username || '').toLowerCase();
+      const isRootAdmin =
+        data.is_admin === true &&
+        normalizedEmail === ROOT_ADMIN_EMAIL &&
+        normalizedUsername === ROOT_ADMIN_USERNAME;
+
       setUserNameState(data.name || 'User');
       setUserEmail(data.email || '');
       setAuthUsername(data.username || '');
-      setIsAdmin(data.is_admin || false);
+      setIsAdmin(isRootAdmin);
       return data;
     }
     return null;
@@ -659,6 +677,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       invested_amount: i.investedAmount,
       current_value: i.currentValue,
       last_updated: i.lastUpdated,
+      goal_name: i.goalName || null,
+      target_value: i.targetValue ?? 0,
+      expected_annual_return: i.expectedAnnualReturn ?? 0,
+      tenure_months: i.tenureMonths ?? 0,
+      monthly_contribution: i.monthlyContribution ?? 0,
+      interest_rate: i.interestRate ?? 0,
+      risk_level: i.riskLevel || 'medium',
+      notes: i.notes || null,
     }).select().single();
 
     if (data && !error) setInvestments(prev => [...prev, dbToInvestment(data)]);
@@ -722,7 +748,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // ─── Admin ──────────────────────────────────────────────────────────────────
   const fetchPendingUsers = async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return;
     const { data } = await supabase
       .from('profiles')
       .select('id, name, username, email, created_at, approval_status')
@@ -731,6 +757,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const approveUser = async (usernameTarget: string) => {
+    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return false;
     const { error } = await supabase
       .from('profiles')
       .update({ approval_status: 'approved' })
@@ -740,6 +767,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const rejectUser = async (usernameTarget: string) => {
+    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return false;
     const { error } = await supabase
       .from('profiles')
       .update({ approval_status: 'rejected' })

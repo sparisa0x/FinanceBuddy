@@ -33,6 +33,14 @@ export interface Investment {
   investedAmount: number;
   currentValue: number;
   lastUpdated: string;
+  goalName?: string;
+  targetValue?: number;
+  expectedAnnualReturn?: number;
+  tenureMonths?: number;
+  monthlyContribution?: number;
+  interestRate?: number;
+  riskLevel?: 'low' | 'medium' | 'high';
+  notes?: string;
 }
 
 export interface WishlistItem {

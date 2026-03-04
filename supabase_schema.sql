@@ -454,3 +454,71 @@ CREATE INDEX IF NOT EXISTS idx_otp_challenges_expires_at ON public.otp_challenge
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON public.user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON public.user_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_approval_notifications_user_id ON public.approval_notifications(user_id);
+
+-- ============================================================
+-- 9. STRICT ADMIN + INVESTMENT PLANNING COLUMNS
+-- ============================================================
+
+ALTER TABLE public.investments
+  ADD COLUMN IF NOT EXISTS goal_name text,
+  ADD COLUMN IF NOT EXISTS target_value numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS expected_annual_return numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tenure_months int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS monthly_contribution numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS interest_rate numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS risk_level text NOT NULL DEFAULT 'medium';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'investments_risk_level_check'
+      AND conrelid = 'public.investments'::regclass
+  ) THEN
+    ALTER TABLE public.investments
+      ADD CONSTRAINT investments_risk_level_check
+      CHECK (risk_level IN ('low', 'medium', 'high'));
+  END IF;
+END $$;
+
+-- Replace profile update policy so normal users cannot self-elevate to admin
+-- or self-approve/reject account status.
+DROP POLICY IF EXISTS "profiles_update_own_or_admin" ON public.profiles;
+CREATE POLICY "profiles_update_own_or_admin"
+  ON public.profiles FOR UPDATE
+  USING (auth.uid() = id OR public.is_admin(auth.uid()))
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR (
+      auth.uid() = id
+      AND is_admin = (SELECT p.is_admin FROM public.profiles p WHERE p.id = id)
+      AND approval_status = (SELECT p.approval_status FROM public.profiles p WHERE p.id = id)
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.enforce_root_admin()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF lower(coalesce(NEW.email, '')) = 'sriramparisa0x@gmail.com'
+     AND lower(coalesce(NEW.username, '')) = 'buddy' THEN
+    NEW.is_admin := true;
+    IF NEW.approval_status <> 'approved' THEN
+      NEW.approval_status := 'approved';
+    END IF;
+  ELSE
+    NEW.is_admin := false;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS enforce_root_admin_trigger ON public.profiles;
+CREATE TRIGGER enforce_root_admin_trigger
+  BEFORE INSERT OR UPDATE OF email, username, is_admin, approval_status
+  ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_root_admin();
