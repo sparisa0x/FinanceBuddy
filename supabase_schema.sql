@@ -179,39 +179,63 @@ $$;
 GRANT EXECUTE ON FUNCTION public.pay_debt_emi(uuid, numeric) TO authenticated;
 
 -- profiles
+DROP POLICY IF EXISTS "profiles_select_own_or_admin" ON public.profiles;
 CREATE POLICY "profiles_select_own_or_admin"  ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_admin(auth.uid()));
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 CREATE POLICY "profiles_insert_own"  ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+DROP POLICY IF EXISTS "profiles_update_own_or_admin" ON public.profiles;
 CREATE POLICY "profiles_update_own_or_admin"  ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin(auth.uid())) WITH CHECK (auth.uid() = id OR public.is_admin(auth.uid()));
+DROP POLICY IF EXISTS "profiles_delete_own" ON public.profiles;
 CREATE POLICY "profiles_delete_own"  ON public.profiles FOR DELETE USING (auth.uid() = id);
 
 -- transactions
+DROP POLICY IF EXISTS "transactions_select_own" ON public.transactions;
 CREATE POLICY "transactions_select_own"  ON public.transactions FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "transactions_insert_own" ON public.transactions;
 CREATE POLICY "transactions_insert_own"  ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "transactions_update_own" ON public.transactions;
 CREATE POLICY "transactions_update_own"  ON public.transactions FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "transactions_delete_own" ON public.transactions;
 CREATE POLICY "transactions_delete_own"  ON public.transactions FOR DELETE USING (auth.uid() = user_id);
 
 -- debts
+DROP POLICY IF EXISTS "debts_select_own" ON public.debts;
 CREATE POLICY "debts_select_own"  ON public.debts FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "debts_insert_own" ON public.debts;
 CREATE POLICY "debts_insert_own"  ON public.debts FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "debts_update_own" ON public.debts;
 CREATE POLICY "debts_update_own"  ON public.debts FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "debts_delete_own" ON public.debts;
 CREATE POLICY "debts_delete_own"  ON public.debts FOR DELETE USING (auth.uid() = user_id);
 
 -- investments
+DROP POLICY IF EXISTS "investments_select_own" ON public.investments;
 CREATE POLICY "investments_select_own"  ON public.investments FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "investments_insert_own" ON public.investments;
 CREATE POLICY "investments_insert_own"  ON public.investments FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "investments_update_own" ON public.investments;
 CREATE POLICY "investments_update_own"  ON public.investments FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "investments_delete_own" ON public.investments;
 CREATE POLICY "investments_delete_own"  ON public.investments FOR DELETE USING (auth.uid() = user_id);
 
 -- wishlist
+DROP POLICY IF EXISTS "wishlist_select_own" ON public.wishlist;
 CREATE POLICY "wishlist_select_own"  ON public.wishlist FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "wishlist_insert_own" ON public.wishlist;
 CREATE POLICY "wishlist_insert_own"  ON public.wishlist FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "wishlist_update_own" ON public.wishlist;
 CREATE POLICY "wishlist_update_own"  ON public.wishlist FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "wishlist_delete_own" ON public.wishlist;
 CREATE POLICY "wishlist_delete_own"  ON public.wishlist FOR DELETE USING (auth.uid() = user_id);
 
 -- credit_scores
+DROP POLICY IF EXISTS "credit_scores_select_own" ON public.credit_scores;
 CREATE POLICY "credit_scores_select_own"  ON public.credit_scores FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "credit_scores_insert_own" ON public.credit_scores;
 CREATE POLICY "credit_scores_insert_own"  ON public.credit_scores FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "credit_scores_update_own" ON public.credit_scores;
 CREATE POLICY "credit_scores_update_own"  ON public.credit_scores FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "credit_scores_delete_own" ON public.credit_scores;
 CREATE POLICY "credit_scores_delete_own"  ON public.credit_scores FOR DELETE USING (auth.uid() = user_id);
 
 -- ============================================================
@@ -264,6 +288,26 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Backfill: ensure every auth.users row has a matching profiles row.
+-- Covers users created before the trigger existed or when a prior partial
+-- schema run prevented the trigger from firing.
+INSERT INTO public.profiles (id, name, username, email, approval_status, is_admin)
+SELECT
+  u.id,
+  COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)),
+  COALESCE(
+    NULLIF(lower(u.raw_user_meta_data->>'username'), ''),
+    lower(split_part(u.email, '@', 1))
+  ),
+  u.email,
+  CASE WHEN lower(u.email) = 'sriramparisa0x@gmail.com' THEN 'approved' ELSE 'pending' END,
+  CASE WHEN lower(u.email) = 'sriramparisa0x@gmail.com' THEN true      ELSE false     END
+FROM auth.users u
+WHERE NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = u.id)
+ON CONFLICT (id) DO UPDATE
+  SET name  = EXCLUDED.name,
+      email = EXCLUDED.email;
 
 -- ============================================================
 -- 6. INDEXES
