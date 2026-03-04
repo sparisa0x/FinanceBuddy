@@ -7,4 +7,5 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
+  base: '/', // Ensure proper base path for Vercel
 })
