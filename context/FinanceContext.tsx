@@ -747,32 +747,55 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // ─── Admin ──────────────────────────────────────────────────────────────────
+  const verifyAdminIdentity = async (): Promise<boolean> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin, email, username')
+      .eq('id', user.id)
+      .single();
+    if (!profile) return false;
+    return (
+      profile.is_admin === true &&
+      (profile.email || '').toLowerCase() === ROOT_ADMIN_EMAIL &&
+      (profile.username || '').toLowerCase() === ROOT_ADMIN_USERNAME
+    );
+  };
+
   const fetchPendingUsers = async () => {
-    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return;
-    const { data } = await supabase
+    const ok = await verifyAdminIdentity();
+    if (!ok) { console.warn('[Admin] identity check failed — skipping fetch'); return; }
+    const { data, error } = await supabase
       .from('profiles')
       .select('id, name, username, email, created_at, approval_status')
       .eq('approval_status', 'pending');
-    if (data) setPendingUsers(data);
+    if (error) { console.error('[Admin] fetchPendingUsers error:', error.message); return; }
+    setPendingUsers(data ?? []);
   };
 
   const approveUser = async (usernameTarget: string) => {
-    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return false;
+    const ok = await verifyAdminIdentity();
+    if (!ok) return false;
     const { error } = await supabase
       .from('profiles')
       .update({ approval_status: 'approved' })
       .eq('username', usernameTarget);
-    if (!error) { setPendingUsers(prev => prev.filter(u => u.username !== usernameTarget)); return true; }
-    return false;
+    if (error) { console.error('[Admin] approveUser error:', error.message); return false; }
+    setPendingUsers(prev => prev.filter(u => u.username !== usernameTarget));
+    return true;
   };
 
   const rejectUser = async (usernameTarget: string) => {
-    if (!isAdmin || userEmail.toLowerCase() !== ROOT_ADMIN_EMAIL || authUsername.toLowerCase() !== ROOT_ADMIN_USERNAME) return false;
+    const ok = await verifyAdminIdentity();
+    if (!ok) return false;
     const { error } = await supabase
       .from('profiles')
       .update({ approval_status: 'rejected' })
       .eq('username', usernameTarget);
-    if (!error) { setPendingUsers(prev => prev.filter(u => u.username !== usernameTarget)); return true; }
+    if (error) { console.error('[Admin] rejectUser error:', error.message); return false; }
+    setPendingUsers(prev => prev.filter(u => u.username !== usernameTarget));
+    return true;
     return false;
   };
 

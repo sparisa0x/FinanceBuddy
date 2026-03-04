@@ -15,6 +15,7 @@ import { Upload, FileText, Loader2 } from 'lucide-react';
 import { LandingPage } from './components/LandingPage';
 import { Preloader } from './components/Preloader';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const ImportView = () => (
   <div className="flex flex-col items-center justify-center h-96 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
@@ -107,6 +108,7 @@ function App() {
         <AppContent />
       </FinanceProvider>
       <Analytics />
+      <SpeedInsights />
     </>
   );
 }

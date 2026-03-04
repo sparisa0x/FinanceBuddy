@@ -1,27 +1,40 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { CheckCircle, XCircle, User, Mail, ShieldAlert } from 'lucide-react';
+import { CheckCircle, XCircle, User, Mail, ShieldAlert, RefreshCw, Clock, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export const AdminPanel: React.FC = () => {
   const { pendingUsers, fetchPendingUsers, approveUser, rejectUser, isAdmin } = useFinance();
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [tab, setTab] = useState<'pending' | 'all'>('pending');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchAllUsers = useCallback(async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, username, email, created_at, approval_status, is_admin')
+      .order('created_at', { ascending: false });
+    if (data) setAllUsers(data);
+  }, []);
+
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchPendingUsers(), fetchAllUsers()]);
+    setRefreshing(false);
+  }, [fetchPendingUsers, fetchAllUsers]);
 
   useEffect(() => {
-      if (!isAdmin) return;
+    if (!isAdmin) return;
 
-      fetchPendingUsers();
+    doRefresh();
 
-      const channel = supabase
-         .channel('pending-profiles-updates')
-         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-            fetchPendingUsers();
-         })
-         .subscribe();
+    // Auto-poll every 10s (Realtime requires paid Supabase plan)
+    const interval = setInterval(doRefresh, 10_000);
 
-      return () => {
-         supabase.removeChannel(channel);
-      };
-   }, [isAdmin]);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isAdmin, doRefresh]);
 
   if (!isAdmin) {
     return (
@@ -33,69 +46,141 @@ export const AdminPanel: React.FC = () => {
     );
   }
 
+  const statusBadge = (status: string) => {
+    const map: Record<string, string> = {
+      pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+      approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+      rejected: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+    };
+    return map[status] || 'bg-slate-100 text-slate-600';
+  };
+
   return (
     <div className="space-y-6">
-       <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Admin Control Panel</h2>
-            <p className="text-slate-500">Manage user access and approvals.</p>
-          </div>
-          <button 
-             onClick={fetchPendingUsers}
-             className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-          >
-             Refresh List
-          </button>
-       </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Admin Control Panel</h2>
+          <p className="text-slate-500">Manage user access and approvals.</p>
+        </div>
+        <button
+          onClick={doRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh List'}
+        </button>
+      </div>
 
-       <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-             <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                Pending Requests
-                <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">{pendingUsers.length}</span>
-             </h3>
-          </div>
-          
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
+        <button
+          onClick={() => setTab('pending')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'pending' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          <Clock className="inline h-4 w-4 mr-1" />
+          Pending Requests
+          <span className="ml-2 bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">{pendingUsers.length}</span>
+        </button>
+        <button
+          onClick={() => setTab('all')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'all' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          <Users className="inline h-4 w-4 mr-1" />
+          All Users
+          <span className="ml-2 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-xs px-2 py-0.5 rounded-full">{allUsers.length}</span>
+        </button>
+      </div>
+
+      {/* Pending Tab */}
+      {tab === 'pending' && (
+        <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
           {pendingUsers.length === 0 ? (
-             <div className="p-8 text-center text-slate-500">
-                <p>No pending registration requests.</p>
-             </div>
+            <div className="p-8 text-center text-slate-500">
+              <p>No pending registration requests.</p>
+              <p className="text-xs mt-2 text-slate-400">New registrations will appear here automatically.</p>
+            </div>
           ) : (
-             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {pendingUsers.map(user => (
-                   <div key={user.username} className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                         <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            <User className="h-5 w-5 text-slate-500" />
-                         </div>
-                         <div>
-                            <p className="font-bold text-slate-900 dark:text-white">{user.name}</p>
-                            <p className="text-sm text-slate-500">@{user.username}</p>
-                            <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
-                               <Mail className="w-3 h-3" /> {user.email}
-                            </div>
-                         </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {pendingUsers.map(user => (
+                <div key={user.username || user.id} className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                      <User className="h-5 w-5 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">{user.name}</p>
+                      <p className="text-sm text-slate-500">@{user.username}</p>
+                      <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                        <Mail className="w-3 h-3" /> {user.email}
                       </div>
-                      
-                      <div className="flex items-center gap-3 w-full sm:w-auto">
-                         <button 
-                           onClick={() => rejectUser(user.username)}
-                           className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 text-sm font-medium transition-colors"
-                         >
-                            <XCircle className="w-4 h-4" /> Reject
-                         </button>
-                         <button 
-                           onClick={() => approveUser(user.username)}
-                           className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors shadow-sm"
-                         >
-                            <CheckCircle className="w-4 h-4" /> Approve
-                         </button>
-                      </div>
-                   </div>
-                ))}
-             </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <button
+                      onClick={() => rejectUser(user.username)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 text-sm font-medium transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" /> Reject
+                    </button>
+                    <button
+                      onClick={() => approveUser(user.username)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors shadow-sm"
+                    >
+                      <CheckCircle className="w-4 h-4" /> Approve
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-       </div>
+        </div>
+      )}
+
+      {/* All Users Tab */}
+      {tab === 'all' && (
+        <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                  <th className="px-4 py-3 font-medium text-slate-500">Name</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">Username</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">Email</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">Status</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allUsers.map(u => (
+                  <tr key={u.id} className="border-b border-slate-50 dark:border-slate-800/50 last:border-0">
+                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{u.name}</td>
+                    <td className="px-4 py-3 text-slate-500">@{u.username}</td>
+                    <td className="px-4 py-3 text-slate-500">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${statusBadge(u.approval_status)}`}>
+                        {u.approval_status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.approval_status === 'pending' && (
+                        <div className="flex gap-2">
+                          <button onClick={() => approveUser(u.username)} className="text-xs text-emerald-600 hover:underline font-medium">Approve</button>
+                          <button onClick={() => rejectUser(u.username)} className="text-xs text-rose-600 hover:underline font-medium">Reject</button>
+                        </div>
+                      )}
+                      {u.approval_status === 'rejected' && (
+                        <button onClick={() => approveUser(u.username)} className="text-xs text-emerald-600 hover:underline font-medium">Approve</button>
+                      )}
+                      {u.is_admin && <span className="text-xs text-indigo-500 font-medium">Admin</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

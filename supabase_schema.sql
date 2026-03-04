@@ -151,6 +151,16 @@ $$;
 GRANT EXECUTE ON FUNCTION public.check_username_available(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin(uuid) TO authenticated;
 
+-- Ensure remaining_amount column exists (safe for re-runs on existing tables)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'debts' AND column_name = 'remaining_amount'
+  ) THEN
+    ALTER TABLE public.debts ADD COLUMN remaining_amount numeric NOT NULL DEFAULT 0;
+  END IF;
+END $$;
+
 -- Atomic EMI payment: decrements remaining_amount in a single SQL statement
 -- preventing read-modify-write races when a user pays from two tabs
 CREATE OR REPLACE FUNCTION public.pay_debt_emi(p_debt_id uuid, p_amount numeric)
