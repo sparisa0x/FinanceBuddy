@@ -40,6 +40,11 @@ const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  // Always land on dashboard after every login / sign-up
+  useEffect(() => {
+    if (isAuthenticated) setActiveTab('dashboard');
+  }, [isAuthenticated]);
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-slate-950">

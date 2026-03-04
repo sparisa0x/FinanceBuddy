@@ -30,7 +30,8 @@ const OTP_TTL_MINUTES = Number.isNaN(parsedOtpTtl) ? 10 : parsedOtpTtl;
 export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT,
-  MONGODB_URI: requireEnv('MONGODB_URI'),
+  SUPABASE_URL: requireEnv('VITE_SUPABASE_URL'),
+  SUPABASE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || requireEnv('VITE_SUPABASE_ANON_KEY'),
   JWT_SECRET: requireEnv('JWT_SECRET'),
   REFRESH_TOKEN_SECRET: requireEnv('REFRESH_TOKEN_SECRET'),
   CLIENT_ORIGIN,
