@@ -39,6 +39,8 @@ interface FinanceContextType {
   // verifyOTP: called after signup OTP input
   verifyOTP: (email: string, otp: string) => Promise<AuthResult>;
   resendOTP: (email: string, flow: 'login' | 'signup') => Promise<AuthResult>;
+  requestPasswordResetOTP: (identifier: string) => Promise<AuthResult>;
+  verifyPasswordResetOTP: (email: string, otp: string, newPassword: string) => Promise<AuthResult>;
   changePassword: (newPass: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
@@ -193,7 +195,38 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Safety net: if onAuthStateChange never fires (network error, etc.) unblock UI
     const safetyTimer = setTimeout(() => {
       if (mounted) setIsLoading(false);
-    }, 10_000);
+    }, 6_000);
+
+    const syncAuthState = async (session: any) => {
+      if (!mounted) return;
+
+      try {
+        if (!session?.user) {
+          resetState();
+          setIsLoading(false);
+          return;
+        }
+
+        const profile = await loadProfile(session.user.id);
+        if (!profile || profile.approval_status !== 'approved') {
+          await supabase.auth.signOut();
+          return;
+        }
+
+        setIsAuthenticated(true);
+        setIsLoading(false);
+        loadAllData();
+      } catch (err) {
+        console.error('[Auth] sync error:', err);
+        setIsLoading(false);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      syncAuthState(data.session);
+    }).catch(() => {
+      if (mounted) setIsLoading(false);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -203,36 +236,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Suppress all intermediate events that occur during the login 2FA flow
         // (signInWithPassword → signOut → signInWithOtp). Real auth happens only
         // after verifyLoginOTP() succeeds and fires a fresh SIGNED_IN.
-        if (loginFlowActiveRef.current) return;
+        if (loginFlowActiveRef.current && (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'INITIAL_SESSION')) return;
 
         try {
-          // ── No session (logged out, OTP pending, etc.) ──────────────────────
-          if (!session?.user) {
-            resetState();
-            setIsLoading(false);
-            return;
-          }
-
-          // ── Token silently refreshed – stay authenticated, nothing else needed
           if (event === 'TOKEN_REFRESHED') {
             setIsLoading(false);
             return;
           }
 
-          // ── New sign-in or page refresh with existing session ───────────────
-          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-            const profile = await loadProfile(session.user.id);
-
-            if (!profile || profile.approval_status !== 'approved') {
-              // Not approved – clear the session; SIGNED_OUT will follow
-              await supabase.auth.signOut();
-              return; // SIGNED_OUT path sets isLoading=false via resetState
-            }
-
-            setIsAuthenticated(true);
-            setIsLoading(false); // Show UI immediately
-            loadAllData();       // Populate data in background
-          }
+          await syncAuthState(session);
         } catch (err) {
           console.error('[Auth] state change error:', err);
           setIsLoading(false); // Always unblock the UI on error
@@ -448,6 +460,51 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: true, message: 'New verification code sent!' };
     } catch (e: any) {
       return { success: false, message: e.message || 'Failed to resend.' };
+    }
+  };
+
+  // ─── Forgot Password via OTP ──────────────────────────────────────────────
+  const requestPasswordResetOTP = async (identifier: string): Promise<AuthResult> => {
+    try {
+      let email = identifier.trim().toLowerCase();
+      if (!identifier.includes('@')) {
+        const { data, error } = await supabase.rpc('get_login_email', { login_identifier: identifier.trim() });
+        if (error || !data) return { success: false, message: 'No account found with that username or email.' };
+        email = data as string;
+      }
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false },
+      });
+
+      if (error) return { success: false, message: error.message };
+      return { success: true, requiresOTP: true, pendingEmail: email, message: 'Password reset code sent to your email.' };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Failed to request password reset code.' };
+    }
+  };
+
+  const verifyPasswordResetOTP = async (email: string, otp: string, newPassword: string): Promise<AuthResult> => {
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' });
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('expired') || msg.includes('invalid')) {
+          return { success: false, message: 'Invalid or expired code. Please request a new one.' };
+        }
+        return { success: false, message: error.message };
+      }
+
+      if (!data.user) return { success: false, message: 'Verification failed.' };
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      await supabase.auth.signOut();
+
+      if (updateError) return { success: false, message: updateError.message };
+      return { success: true, message: 'Password reset successful. Please sign in with your new password.' };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Password reset failed.' };
     }
   };
 
@@ -699,7 +756,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       addToWishlist, updateWishlistItem, deleteWishlistItem,
       healthScore, netWorth, totalDebt, monthlyEMI, creditScores, updateCreditScores,
       isAuthenticated, isAdmin,
-      login, verifyLoginOTP, register, verifyOTP, resendOTP, changePassword, logout,
+      login, verifyLoginOTP, register, verifyOTP, resendOTP,
+      requestPasswordResetOTP, verifyPasswordResetOTP,
+      changePassword, logout,
       isLoading, isCloudConnected,
       authUsername, userEmail,
       pendingUsers, fetchPendingUsers, approveUser, rejectUser,

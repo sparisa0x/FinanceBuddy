@@ -10,7 +10,9 @@ import {
 // 'login-otp'   → OTP input after successful password (2FA)
 // 'register'     → full registration form
 // 'register-otp' → OTP input after signup (email confirmation)
-type ViewMode = 'login' | 'login-otp' | 'register' | 'register-otp';
+// 'forgot-password' → request OTP for reset
+// 'forgot-otp'      → verify OTP and set new password
+type ViewMode = 'login' | 'login-otp' | 'register' | 'register-otp' | 'forgot-password' | 'forgot-otp';
 
 // ─── OTP digit sub-component ─────────────────────────────────────────────────
 const OtpInput: React.FC<{
@@ -39,8 +41,16 @@ const OtpInput: React.FC<{
 );
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export const Login: React.FC = () => {
-  const { login, verifyLoginOTP, register, verifyOTP, resendOTP } = useFinance();
+export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => {
+  const {
+    login,
+    verifyLoginOTP,
+    register,
+    verifyOTP,
+    resendOTP,
+    requestPasswordResetOTP,
+    verifyPasswordResetOTP,
+  } = useFinance();
 
   const [view, setView] = useState<ViewMode>('login');
 
@@ -62,6 +72,13 @@ export const Login: React.FC = () => {
   const [regConfirmPw, setRegConfirmPw] = useState('');
   const [showRegPw, setShowRegPw] = useState(false);
   const [showRegConfirm, setShowRegConfirm] = useState(false);
+
+  // Forgot password fields
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [showResetPw, setShowResetPw] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // OTP shared state
   const [pendingEmail, setPendingEmail] = useState('');
@@ -216,7 +233,7 @@ export const Login: React.FC = () => {
     if (otpTimer > 0) return;
     clearMessages();
     setLoading(true);
-    const flow: 'login' | 'signup' = view === 'login-otp' ? 'login' : 'signup';
+    const flow: 'login' | 'signup' = (view === 'login-otp' || view === 'forgot-otp') ? 'login' : 'signup';
     const result = await resendOTP(pendingEmail, flow);
     if (result.success) {
       setSuccessMsg('New verification code sent!');
@@ -230,17 +247,76 @@ export const Login: React.FC = () => {
   // ── Format timer ───────────────────────────────────────────────────────────
   const formatTimer = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotIdentifier.trim()) {
+      setError('Please enter your email or username.');
+      return;
+    }
+
+    clearMessages();
+    setLoading(true);
+    const result = await requestPasswordResetOTP(forgotIdentifier.trim());
+
+    if (!result.success) {
+      setError(result.message || 'Failed to send reset code.');
+      setLoading(false);
+      return;
+    }
+
+    setPendingEmail(result.pendingEmail || forgotIdentifier.trim().toLowerCase());
+    resetOtp();
+    setView('forgot-otp');
+    setLoading(false);
+  };
+
+  const handleForgotOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const otp = otpDigits.join('');
+    if (otp.length !== 6) {
+      setError('Please enter the 6-digit code.');
+      return;
+    }
+    if (resetPassword.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+    if (resetPassword !== resetConfirmPassword) {
+      setError('New passwords do not match.');
+      return;
+    }
+
+    clearMessages();
+    setLoading(true);
+    const result = await verifyPasswordResetOTP(pendingEmail, otp, resetPassword);
+
+    if (!result.success) {
+      setError(result.message || 'Password reset failed.');
+      setLoading(false);
+      return;
+    }
+
+    setSuccessMsg(result.message || 'Password reset successful. Please sign in.');
+    setResetPassword('');
+    setResetConfirmPassword('');
+    setOtpDigits(['', '', '', '', '', '']);
+    setView('login');
+    setLoading(false);
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // Render helpers
   // ─────────────────────────────────────────────────────────────────────────
 
-  const isOtpView = view === 'login-otp' || view === 'register-otp';
+  const isOtpView = view === 'login-otp' || view === 'register-otp' || view === 'forgot-otp';
 
   const headerTitle = {
     'login': 'Finance Buddy',
     'login-otp': 'Verify Identity',
     'register': 'Create Account',
     'register-otp': 'Verify Email',
+    'forgot-password': 'Reset Password',
+    'forgot-otp': 'Verify Reset Code',
   }[view];
 
   const headerSub = {
@@ -248,6 +324,8 @@ export const Login: React.FC = () => {
     'login-otp': `Enter the 6-digit code sent to ${pendingEmail}`,
     'register': 'Join Finance Buddy today',
     'register-otp': `Enter the 6-digit code sent to ${pendingEmail}`,
+    'forgot-password': 'Receive a one-time code to reset your password',
+    'forgot-otp': `Enter the reset code sent to ${pendingEmail}`,
   }[view];
 
   const pwStrength = (pw: string) => {
@@ -264,6 +342,16 @@ export const Login: React.FC = () => {
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-slate-950 px-4 py-8">
       <div className="w-full max-w-md animate-fade-in space-y-6 rounded-2xl bg-slate-900 p-8 shadow-2xl border border-slate-800">
+
+        {onBackHome && (
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="text-xs text-slate-400 hover:text-white transition-colors"
+          >
+            ← Back to Home
+          </button>
+        )}
 
         {/* Header */}
         <div className="text-center">
@@ -321,6 +409,9 @@ export const Login: React.FC = () => {
               </p>
               <button type="button" onClick={() => goTo('register')} className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
                 New here? Create an account
+              </button>
+              <button type="button" onClick={() => goTo('forgot-password')} className="w-full text-center text-sm text-slate-400 hover:text-slate-200 font-medium transition-colors">
+                Forgot password?
               </button>
             </div>
           </form>
@@ -457,6 +548,102 @@ export const Login: React.FC = () => {
             <div className="flex items-center justify-between text-sm">
               <button type="button" onClick={() => { clearMessages(); setView('register'); }}
                 className="text-slate-400 hover:text-white transition-colors">← Back to register</button>
+              <button type="button" disabled={otpTimer > 0} onClick={handleResend}
+                className={`flex items-center gap-1 font-medium transition-colors ${otpTimer > 0 ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'}`}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                {otpTimer > 0 ? `Resend in ${formatTimer(otpTimer)}` : 'Resend Code'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── FORGOT PASSWORD REQUEST FORM ─────────────────────────────────── */}
+        {view === 'forgot-password' && (
+          <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Email or Username</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  type="text"
+                  required
+                  value={forgotIdentifier}
+                  onChange={e => setForgotIdentifier(e.target.value)}
+                  className={inputBase}
+                  placeholder="Enter email or username"
+                />
+              </div>
+            </div>
+
+            <div className="pt-1 space-y-2">
+              <button type="submit" disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
+                {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Sending code...</>
+                  : <>Send Reset Code <ArrowRight className="h-4 w-4" /></>}
+              </button>
+              <button type="button" onClick={() => goTo('login')} className="w-full text-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
+                Back to sign in
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── FORGOT PASSWORD OTP FORM ─────────────────────────────────────── */}
+        {view === 'forgot-otp' && (
+          <form onSubmit={handleForgotOtpSubmit} className="space-y-5">
+            <div className="rounded-lg bg-slate-800/60 border border-slate-700 p-3 text-xs text-slate-400 text-center">
+              A reset code was sent to <span className="font-semibold text-slate-200">{pendingEmail}</span>.
+              It expires in <span className="text-indigo-400 font-semibold">5 minutes</span>.
+            </div>
+
+            <OtpInput digits={otpDigits} onChange={handleOtpChange} onKeyDown={handleOtpKeyDown} onPaste={handleOtpPaste} inputRefs={otpRefs} />
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">New Password</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  type={showResetPw ? 'text' : 'password'}
+                  required
+                  minLength={8}
+                  value={resetPassword}
+                  onChange={e => setResetPassword(e.target.value)}
+                  className={`${inputBase} pr-10`}
+                  placeholder="Enter new password"
+                />
+                <button type="button" onClick={() => setShowResetPw(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
+                  {showResetPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Confirm New Password</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Lock className="h-5 w-5 text-slate-500" /></div>
+                <input
+                  type={showResetConfirm ? 'text' : 'password'}
+                  required
+                  value={resetConfirmPassword}
+                  onChange={e => setResetConfirmPassword(e.target.value)}
+                  className={`${inputBase} pr-10`}
+                  placeholder="Confirm new password"
+                />
+                <button type="button" onClick={() => setShowResetConfirm(v => !v)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors">
+                  {showResetConfirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading || otpDigits.join('').length !== 6}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 px-4 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
+              {loading ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Resetting...</>
+                : <>Verify &amp; Reset Password <ArrowRight className="h-4 w-4" /></>}
+            </button>
+
+            <div className="flex items-center justify-between text-sm">
+              <button type="button" onClick={() => { clearMessages(); setView('forgot-password'); }}
+                className="text-slate-400 hover:text-white transition-colors">← Back</button>
               <button type="button" disabled={otpTimer > 0} onClick={handleResend}
                 className={`flex items-center gap-1 font-medium transition-colors ${otpTimer > 0 ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'}`}>
                 <RefreshCw className="h-3.5 w-3.5" />

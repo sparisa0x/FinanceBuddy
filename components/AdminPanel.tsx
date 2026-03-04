@@ -55,7 +55,7 @@ export const AdminPanel: React.FC = () => {
                             <User className="h-5 w-5 text-slate-500" />
                          </div>
                          <div>
-                            <p className="font-bold text-slate-900 dark:text-white">{user.displayName}</p>
+                            <p className="font-bold text-slate-900 dark:text-white">{user.name}</p>
                             <p className="text-sm text-slate-500">@{user.username}</p>
                             <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
                                <Mail className="w-3 h-3" /> {user.email}

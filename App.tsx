@@ -12,6 +12,8 @@ import { Profile } from './components/Profile';
 import { Login } from './components/Login';
 import { AdminPanel } from './components/AdminPanel';
 import { Upload, FileText, Loader2 } from 'lucide-react';
+import { LandingPage } from './components/LandingPage';
+import { Preloader } from './components/Preloader';
 
 const ImportView = () => (
   <div className="flex flex-col items-center justify-center h-96 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
@@ -39,11 +41,26 @@ const AnalyticsView = () => (
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [publicView, setPublicView] = useState<'landing' | 'auth'>('landing');
+  const [showPreloader, setShowPreloader] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowPreloader(false), 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Always land on dashboard after every login / sign-up
   useEffect(() => {
     if (isAuthenticated) setActiveTab('dashboard');
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) setPublicView('landing');
+  }, [isAuthenticated]);
+
+  if (showPreloader) {
+    return <Preloader />;
+  }
 
   if (isLoading) {
     return (
@@ -57,7 +74,10 @@ const AppContent: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return <Login />;
+    if (publicView === 'landing') {
+      return <LandingPage onGetStarted={() => setPublicView('auth')} onSignIn={() => setPublicView('auth')} />;
+    }
+    return <Login onBackHome={() => setPublicView('landing')} />;
   }
 
   return (

@@ -285,3 +285,172 @@ SET is_admin = true,
     approval_status = 'approved',
     username = 'buddy'
 WHERE lower(email) = 'sriramparisa0x@gmail.com';
+
+-- ============================================================
+-- 8. AUTH HARDENING (OTP / SESSION / APPROVAL NOTIFICATIONS)
+-- ============================================================
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email_unique
+  ON public.profiles (lower(email))
+  WHERE email IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.otp_challenges (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id       uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  email         text,
+  purpose       text NOT NULL CHECK (purpose IN ('login', 'signup', 'password_reset', 'admin_login', 'admin_register')),
+  code_hash     text NOT NULL,
+  attempts      int NOT NULL DEFAULT 0,
+  expires_at    timestamptz NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.user_sessions (
+  id                 uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id            uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  refresh_token_hash text NOT NULL,
+  session_label      text,
+  ip                 text,
+  user_agent         text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  last_active_at     timestamptz NOT NULL DEFAULT now(),
+  expires_at         timestamptz NOT NULL DEFAULT (now() + interval '5 days'),
+  revoked_at         timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS public.approval_notifications (
+  id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  approval_status text NOT NULL CHECK (approval_status IN ('approved', 'rejected')),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  is_read         boolean NOT NULL DEFAULT false
+);
+
+ALTER TABLE public.otp_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approval_notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS otp_challenges_select_own_or_admin ON public.otp_challenges;
+CREATE POLICY otp_challenges_select_own_or_admin
+  ON public.otp_challenges FOR SELECT
+  USING (
+    auth.uid() = user_id
+    OR lower(coalesce(email, '')) = lower((auth.jwt() ->> 'email'))
+    OR public.is_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS otp_challenges_insert_own_or_admin ON public.otp_challenges;
+CREATE POLICY otp_challenges_insert_own_or_admin
+  ON public.otp_challenges FOR INSERT
+  WITH CHECK (
+    auth.uid() = user_id
+    OR lower(coalesce(email, '')) = lower((auth.jwt() ->> 'email'))
+    OR public.is_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS otp_challenges_update_own_or_admin ON public.otp_challenges;
+CREATE POLICY otp_challenges_update_own_or_admin
+  ON public.otp_challenges FOR UPDATE
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS otp_challenges_delete_own_or_admin ON public.otp_challenges;
+CREATE POLICY otp_challenges_delete_own_or_admin
+  ON public.otp_challenges FOR DELETE
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS user_sessions_select_own_or_admin ON public.user_sessions;
+CREATE POLICY user_sessions_select_own_or_admin
+  ON public.user_sessions FOR SELECT
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS user_sessions_insert_own_or_admin ON public.user_sessions;
+CREATE POLICY user_sessions_insert_own_or_admin
+  ON public.user_sessions FOR INSERT
+  WITH CHECK (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS user_sessions_update_own_or_admin ON public.user_sessions;
+CREATE POLICY user_sessions_update_own_or_admin
+  ON public.user_sessions FOR UPDATE
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS user_sessions_delete_own_or_admin ON public.user_sessions;
+CREATE POLICY user_sessions_delete_own_or_admin
+  ON public.user_sessions FOR DELETE
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS approval_notifications_select_own_or_admin ON public.approval_notifications;
+CREATE POLICY approval_notifications_select_own_or_admin
+  ON public.approval_notifications FOR SELECT
+  USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS approval_notifications_insert_admin ON public.approval_notifications;
+CREATE POLICY approval_notifications_insert_admin
+  ON public.approval_notifications FOR INSERT
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS approval_notifications_update_own ON public.approval_notifications;
+CREATE POLICY approval_notifications_update_own
+  ON public.approval_notifications FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profiles_set_updated_at ON public.profiles;
+CREATE TRIGGER profiles_set_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.touch_session_activity(p_session_id uuid)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE public.user_sessions
+  SET last_active_at = now(),
+      expires_at = GREATEST(expires_at, now() + interval '5 days')
+  WHERE id = p_session_id
+    AND revoked_at IS NULL;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.touch_session_activity(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.on_profile_approval_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.approval_status IN ('approved', 'rejected')
+     AND NEW.approval_status IS DISTINCT FROM OLD.approval_status THEN
+    INSERT INTO public.approval_notifications (user_id, approval_status)
+    VALUES (NEW.id, NEW.approval_status);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profile_approval_change_trigger ON public.profiles;
+CREATE TRIGGER profile_approval_change_trigger
+  AFTER UPDATE OF approval_status ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.on_profile_approval_change();
+
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_user_id ON public.otp_challenges(user_id);
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_email ON public.otp_challenges(lower(email));
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_expires_at ON public.otp_challenges(expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON public.user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON public.user_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_approval_notifications_user_id ON public.approval_notifications(user_id);
