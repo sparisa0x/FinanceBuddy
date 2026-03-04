@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { Plus, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
 
 export const IncomeExpense: React.FC = () => {
-  const { transactions, addTransaction, currency } = useFinance();
+  const { transactions, addTransaction, deleteTransaction, currency } = useFinance();
   const [activeTab, setActiveTab] = useState<'income' | 'expense'>('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
@@ -117,7 +117,7 @@ export const IncomeExpense: React.FC = () => {
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {filteredTransactions.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 dark:hover:bg-slate-800">
+            <div key={t.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/50 dark:hover:bg-slate-800 group">
               <div className="flex items-center gap-4">
                 <div className={`flex h-10 w-10 items-center justify-center rounded-full ${t.type === 'income' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'}`}>
                   {t.type === 'income' ? <ArrowUp className="h-5 w-5" /> : <ArrowDown className="h-5 w-5" />}
@@ -127,11 +127,24 @@ export const IncomeExpense: React.FC = () => {
                   <p className="text-sm text-slate-500 dark:text-slate-400">{t.description}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className={`font-bold ${t.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                  {t.type === 'income' ? '+' : '-'}{currency}{t.amount.toLocaleString()}
-                </p>
-                <p className="text-xs text-slate-400">{t.date}</p>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <p className={`font-bold ${t.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                    {t.type === 'income' ? '+' : '-'}{currency}{t.amount.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-slate-400">{t.date}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Delete this ${t.type} of ${currency}${t.amount.toLocaleString()}?`)) {
+                      deleteTransaction(t.id);
+                    }
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-full opacity-0 group-hover:opacity-100 transition-all"
+                  title="Delete transaction"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}

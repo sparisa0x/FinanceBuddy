@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { TrendingUp, TrendingDown, Target, PlusCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, PlusCircle, Trash2 } from 'lucide-react';
 import { InvestmentType } from '../types';
 
 export const Investments: React.FC = () => {
-  const { investments, currency, addInvestment } = useFinance();
+  const { investments, currency, addInvestment, deleteInvestment } = useFinance();
 
   const [name, setName] = useState('');
   const [type, setType] = useState<InvestmentType>('stock');
@@ -155,6 +155,7 @@ export const Investments: React.FC = () => {
                    <th className="pb-3 text-sm font-medium text-slate-500">Goal</th>
                    <th className="pb-3 text-sm font-medium text-slate-500">Term / Interest</th>
                    <th className="pb-3 text-sm font-medium text-slate-500">P/L</th>
+                   <th className="pb-3 text-sm font-medium text-slate-500 w-12"></th>
                  </tr>
                </thead>
                <tbody className="text-sm">
@@ -184,6 +185,19 @@ export const Investments: React.FC = () => {
                        </td>
                        <td className={`py-4 font-medium ${gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                          {gain >= 0 ? '+' : ''}{currency}{gain.toLocaleString()}
+                       </td>
+                       <td className="py-4">
+                         <button
+                           onClick={() => {
+                             if (window.confirm(`Delete investment "${inv.name}"? This cannot be undone.`)) {
+                               deleteInvestment(inv.id);
+                             }
+                           }}
+                           className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-full transition-colors"
+                           title="Delete investment"
+                         >
+                           <Trash2 className="h-4 w-4" />
+                         </button>
                        </td>
                      </tr>
                    );

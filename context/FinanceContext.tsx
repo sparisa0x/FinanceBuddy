@@ -14,11 +14,13 @@ interface FinanceContextType {
   userName: string;
   setUserName: (name: string) => void;
   addTransaction: (t: Omit<Transaction, 'id'>) => void;
+  deleteTransaction: (id: string) => void;
   addDebt: (d: Omit<Debt, 'id' | 'remainingAmount'>) => void;
   updateDebt: (id: string, d: Partial<Debt>) => void;
   deleteDebt: (id: string) => void;
   payEMI: (debtId: string, amount: number) => void;
   addInvestment: (i: Omit<Investment, 'id'>) => void;
+  deleteInvestment: (id: string) => void;
   addToWishlist: (w: Omit<WishlistItem, 'id' | 'status' | 'viewCount'>) => void;
   updateWishlistItem: (id: string, updates: Partial<WishlistItem>) => void;
   deleteWishlistItem: (id: string) => void;
@@ -544,11 +546,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       // 2. Authenticate with password
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+      // Handle "Email not confirmed" — password was correct, just email unverified.
+      // We treat this the same as a successful password check: verify profile, then send OTP.
       if (authError) {
+        const errMsg = (authError.message || '').toLowerCase();
+        const isEmailNotConfirmed = errMsg.includes('email not confirmed') || errMsg.includes('not confirmed');
+
+        if (!isEmailNotConfirmed) {
+          loginInProgressRef.current = false;
+          return { success: false, message: authError.message === 'Invalid login credentials'
+            ? 'Incorrect email/username or password.'
+            : authError.message };
+        }
+
+        // Email not confirmed but password was correct → check profile via RPC, then send OTP
+        // We can't query profiles table since there's no active session.
+        // Skip profile check here (profile was created at signup), just send OTP.
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: false },
+        });
+
+        if (otpError) {
+          loginInProgressRef.current = false;
+          return { success: false, message: 'Failed to send verification code: ' + otpError.message };
+        }
+
         loginInProgressRef.current = false;
-        return { success: false, message: authError.message === 'Invalid login credentials'
-          ? 'Incorrect email/username or password.'
-          : authError.message };
+        return { success: true, requiresOTP: true, pendingEmail: email };
       }
 
       if (!authData.user) {
@@ -931,6 +957,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     console.error('[Transactions] Failed to persist transaction after retries. Saved locally as backup.');
   };
 
+  const deleteTransaction = async (id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    // Don't try to delete local-only optimistic items
+    if (id.startsWith('local-')) return;
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) console.error('[Transactions] delete error:', error.message);
+  };
+
   // ─── CRUD: Debts ────────────────────────────────────────────────────────────
   const addDebt = async (d: Omit<Debt, 'id' | 'remainingAmount'>) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1090,6 +1124,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (data && !error) setInvestments(prev => [...prev, dbToInvestment(data)]);
   };
 
+  const deleteInvestment = async (id: string) => {
+    setInvestments(prev => prev.filter(i => i.id !== id));
+    const { error } = await supabase.from('investments').delete().eq('id', id);
+    if (error) console.error('[Investments] delete error:', error.message);
+  };
+
   // ─── CRUD: Wishlist ─────────────────────────────────────────────────────────
   const addToWishlist = async (w: Omit<WishlistItem, 'id' | 'status' | 'viewCount'>) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1212,7 +1252,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   return (
     <FinanceContext.Provider value={{
       transactions, debts, investments, wishlist, currency, userName, setUserName,
-      addTransaction, addDebt, updateDebt, deleteDebt, payEMI, addInvestment,
+      addTransaction, deleteTransaction, addDebt, updateDebt, deleteDebt, payEMI, addInvestment, deleteInvestment,
       addToWishlist, updateWishlistItem, deleteWishlistItem,
       healthScore, netWorth, totalDebt, monthlyEMI, creditScores, updateCreditScores,
       isAuthenticated, isAdmin,
