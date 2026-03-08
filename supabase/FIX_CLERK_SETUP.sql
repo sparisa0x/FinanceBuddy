@@ -91,6 +91,56 @@ GRANT EXECUTE ON FUNCTION public.check_username_available(TEXT) TO anon, authent
 GRANT EXECUTE ON FUNCTION public.pay_debt_emi(TEXT, numeric)    TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- BYPASS FUNCTIONS: work WITHOUT a valid JWT (SECURITY DEFINER skips RLS)
+-- These let the app bootstrap a profile even if JWT template is not configured.
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.get_profile_by_clerk_id(text) CASCADE;
+DROP FUNCTION IF EXISTS public.upsert_my_profile(text, text, text, text) CASCADE;
+
+-- Returns the profile row for the given Clerk user ID (no JWT required)
+CREATE OR REPLACE FUNCTION public.get_profile_by_clerk_id(p_clerk_id TEXT)
+RETURNS SETOF public.profiles
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT * FROM public.profiles WHERE id::text = p_clerk_id LIMIT 1;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_profile_by_clerk_id(TEXT) TO anon, authenticated;
+
+-- Inserts or updates a profile row; auto-promotes admin email / first user
+CREATE OR REPLACE FUNCTION public.upsert_my_profile(
+  p_clerk_id TEXT,
+  p_email    TEXT,
+  p_username TEXT,
+  p_name     TEXT
+)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_promote BOOLEAN;
+BEGIN
+  -- Promote to admin+approved if: known admin email OR very first user
+  v_promote := lower(p_email) = 'sriramparisa0x@gmail.com'
+    OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id::text <> p_clerk_id);
+
+  INSERT INTO public.profiles (id, email, username, name, role, status)
+  VALUES (
+    p_clerk_id,
+    lower(p_email),
+    lower(p_username),
+    p_name,
+    CASE WHEN v_promote THEN 'admin' ELSE 'user' END,
+    CASE WHEN v_promote THEN 'approved' ELSE 'pending' END
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email    = lower(EXCLUDED.email),
+    name     = EXCLUDED.name,
+    role     = CASE WHEN lower(EXCLUDED.email) = 'sriramparisa0x@gmail.com'
+                    THEN 'admin' ELSE profiles.role END,
+    status   = CASE WHEN lower(EXCLUDED.email) = 'sriramparisa0x@gmail.com'
+                    THEN 'approved' ELSE profiles.status END;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.upsert_my_profile(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Ensure column types are TEXT (safe no-op if already TEXT)
 -- ─────────────────────────────────────────────────────────────────────────────
 DO $$

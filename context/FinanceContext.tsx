@@ -181,21 +181,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // ── Profile loading ────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async (userId: string) => {
+    // Uses a SECURITY DEFINER RPC so it works even without a valid JWT.
     const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+      .rpc('get_profile_by_clerk_id', { p_clerk_id: userId });
 
-    if (data && !error) {
-      const status = (data.status as 'pending' | 'approved' | 'rejected') ?? 'pending';
-      const isRoleAdmin = data.role === 'admin';
-      setUserNameState(data.name || data.username || 'User');
-      setUserEmail(data.email || '');
-      setAuthUsername(data.username || '');
+    if (error) {
+      console.error('[Auth] get_profile_by_clerk_id error:', error.message);
+      return null;
+    }
+
+    const profile = Array.isArray(data) ? data[0] : data;
+    if (profile) {
+      const status = (profile.status as 'pending' | 'approved' | 'rejected') ?? 'pending';
+      const isRoleAdmin = profile.role === 'admin';
+      setUserNameState(profile.name || profile.username || 'User');
+      setUserEmail(profile.email || '');
+      setAuthUsername(profile.username || '');
       setIsAdmin(isRoleAdmin);
       setProfileStatus(status);
-      return data;
+      return profile;
     }
     return null;
   }, [supabase]);
@@ -283,28 +287,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log('[Auth] Loading profile for Clerk user:', userId);
         let profile = await loadProfile(userId);
 
-        // If no profile exists yet, auto-create it as a pending user.
-        // Admin promotion is handled at the DB level via FIX_CLERK_SETUP.sql
-        // (UPDATE profiles SET role='admin', status='approved' WHERE email=...).
+        // If no profile exists yet, create it via SECURITY DEFINER RPC.
+        // The RPC auto-promotes admin email / first user — no JWT needed.
         if (!profile) {
-          console.log('[Auth] No profile found, auto-creating...');
+          console.log('[Auth] No profile found, auto-creating via RPC...');
           const clerkEmail = user.primaryEmailAddress?.emailAddress || '';
           const clerkName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'User';
           const clerkUsername = user.username || clerkEmail.split('@')[0] || 'user';
 
-          const { error: insertError } = await supabase.from('profiles').upsert({
-            id: userId,
-            email: clerkEmail.toLowerCase(),
-            username: clerkUsername.toLowerCase(),
-            name: clerkName,
-            role: 'user',
-            status: 'pending',
-          }, { onConflict: 'id' });
+          const { error: rpcError } = await supabase.rpc('upsert_my_profile', {
+            p_clerk_id: userId,
+            p_email: clerkEmail,
+            p_username: clerkUsername,
+            p_name: clerkName,
+          });
 
-          if (insertError) {
-            console.error('[Auth] auto-create profile error:', insertError.message, insertError);
+          if (rpcError) {
+            console.error('[Auth] upsert_my_profile RPC error:', rpcError.message, rpcError);
           } else {
-            console.log('[Auth] Profile created (pending). Admin is promoted via SQL.');
+            console.log('[Auth] Profile created via RPC.');
           }
 
           // Re-load to pick up the newly created profile
@@ -334,21 +335,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!user) return false;
     const userId = user.id;
 
-    const { error } = await supabase.from('profiles').upsert({
-      id: userId,
-      email: email.toLowerCase(),
-      username: username.toLowerCase(),
-      name,
-      role: 'user',
-      status: 'pending',
-    }, { onConflict: 'id' });
+    const { error } = await supabase.rpc('upsert_my_profile', {
+      p_clerk_id: userId,
+      p_email: email,
+      p_username: username,
+      p_name: name,
+    });
 
     if (error) {
       console.error('[ensureProfile] error:', error.message);
       return false;
     }
 
-    setProfileStatus('pending');
+    // Re-read profile status in case the email auto-promoted to admin
+    await loadProfile(userId);
     return true;
   };
 
