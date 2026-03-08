@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MENU_ITEMS } from '../constants';
 import { Moon, Sun, Menu, X, LogOut, User } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
+import { useAuth } from '@clerk/react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,7 +16,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
     const saved = localStorage.getItem('finance_theme');
     return saved ? saved === 'dark' : true; // default dark
   });
-  const { userName, logout, isAdmin } = useFinance();
+  const { userName, isAdmin } = useFinance();
+  const { signOut } = useAuth();
 
   const toggleTheme = () => {
     const newMode = !isDarkMode;
@@ -29,7 +31,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   };
 
   const handleLogout = () => {
-    logout();
+    signOut();
   };
 
   return (

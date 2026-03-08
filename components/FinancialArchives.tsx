@@ -148,7 +148,7 @@ export const FinancialArchives: React.FC = () => {
            <div className="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
               <div className="flex justify-between items-center mb-6">
                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Add Past Record</h3>
-                 <button onClick={() => setIsModalOpen(false)}><X className="w-6 h-6 text-slate-400" /></button>
+                 <button onClick={() => setIsModalOpen(false)} aria-label="Close modal"><X className="w-6 h-6 text-slate-400" /></button>
               </div>
 
               <form onSubmit={handleAddHistorical} className="space-y-4">
@@ -174,6 +174,7 @@ export const FinancialArchives: React.FC = () => {
                          value={date} 
                          onChange={e => setDate(e.target.value)} 
                          className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                         placeholder="YYYY-MM-DD"
                          required
                        />
                     </div>
@@ -184,6 +185,7 @@ export const FinancialArchives: React.FC = () => {
                          value={amount} 
                          onChange={e => setAmount(e.target.value)} 
                          className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                         placeholder="0"
                          required
                        />
                     </div>

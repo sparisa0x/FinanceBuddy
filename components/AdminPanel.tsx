@@ -1,10 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useAuth } from '@clerk/react';
 import { CheckCircle, XCircle, User, Mail, ShieldAlert, RefreshCw, Clock, Users } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { createClerkSupabaseClient } from '../lib/supabase';
 
 export const AdminPanel: React.FC = () => {
   const { pendingUsers, fetchPendingUsers, approveUser, rejectUser, isAdmin } = useFinance();
+  const { getToken } = useAuth();
+  const supabase = useMemo(() => createClerkSupabaseClient(getToken), [getToken]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
   const [refreshing, setRefreshing] = useState(false);

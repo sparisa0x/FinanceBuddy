@@ -102,7 +102,7 @@ export const Investments: React.FC = () => {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Asset name" className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" required />
-          <select value={type} onChange={e => setType(e.target.value as InvestmentType)} className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          <select value={type} onChange={e => setType(e.target.value as InvestmentType)} className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" title="Investment type">
             <option value="stock">Stock</option>
             <option value="mutual_fund">Mutual Fund</option>
             <option value="fd">FD</option>
@@ -119,7 +119,7 @@ export const Investments: React.FC = () => {
           <input type="number" value={expectedAnnualReturn} onChange={e => setExpectedAnnualReturn(e.target.value)} placeholder="Expected annual return %" className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" />
           <input type="number" value={tenureMonths} onChange={e => setTenureMonths(e.target.value)} placeholder="Term (months)" className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" />
           <input type="number" value={monthlyContribution} onChange={e => setMonthlyContribution(e.target.value)} placeholder="Monthly contribution" className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" />
-          <select value={riskLevel} onChange={e => setRiskLevel(e.target.value as 'low' | 'medium' | 'high')} className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          <select value={riskLevel} onChange={e => setRiskLevel(e.target.value as 'low' | 'medium' | 'high')} className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm" title="Risk level">
             <option value="low">Low risk</option>
             <option value="medium">Medium risk</option>
             <option value="high">High risk</option>

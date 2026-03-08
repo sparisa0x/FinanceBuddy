@@ -80,6 +80,7 @@ export const Wishlist: React.FC = () => {
               <button 
                 onClick={() => handleDelete(item.id)}
                 className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Delete item"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -105,7 +106,7 @@ export const Wishlist: React.FC = () => {
                    <span className={isAffordable ? 'text-emerald-500' : 'text-rose-500'}>{isAffordable ? 'Safe to buy' : 'Wait & Save'}</span>
                  </div>
                  <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                   <div className={`h-full ${isAffordable ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: isAffordable ? '100%' : '40%' }}></div>
+                   <div className={`h-full ${isAffordable ? 'bg-emerald-500 w-full' : 'bg-rose-500 w-2/5'}`}></div>
                  </div>
               </div>
 
@@ -145,7 +146,7 @@ export const Wishlist: React.FC = () => {
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">Add to Wishlist</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" aria-label="Close modal">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -170,6 +171,7 @@ export const Wishlist: React.FC = () => {
                   value={estimatedCost} 
                   onChange={e => setEstimatedCost(e.target.value)} 
                   className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  placeholder="0"
                   required
                 />
               </div>
@@ -181,6 +183,7 @@ export const Wishlist: React.FC = () => {
                       value={category}
                       onChange={e => setCategory(e.target.value as any)}
                       className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      title="Category"
                     >
                       <option value="need">Need</option>
                       <option value="want">Want</option>
@@ -193,6 +196,7 @@ export const Wishlist: React.FC = () => {
                       value={priority}
                       onChange={e => setPriority(e.target.value as any)}
                       className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      title="Priority"
                     >
                       <option value="high">High</option>
                       <option value="medium">Medium</option>

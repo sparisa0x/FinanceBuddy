@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useUser, useAuth } from '@clerk/react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -11,7 +12,7 @@ import { FinancialArchives } from './components/FinancialArchives';
 import { Profile } from './components/Profile';
 import { Login } from './components/Login';
 import { AdminPanel } from './components/AdminPanel';
-import { Upload, FileText, Loader2 } from 'lucide-react';
+import { Upload, FileText, Loader2, ShieldAlert, Clock, LogOut } from 'lucide-react';
 import { LandingPage } from './components/LandingPage';
 import { Preloader } from './components/Preloader';
 import { Analytics } from '@vercel/analytics/react';
@@ -59,7 +60,9 @@ const AnalyticsView = () => (
 );
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading } = useFinance();
+  const { isAuthenticated, isLoading, isProfileLoading, profileStatus } = useFinance();
+  const { isSignedIn, isLoaded: clerkLoaded } = useUser();
+  const { signOut } = useAuth();
   const [activeTab, setActiveTabState] = useState<string>('dashboard');
   const [publicView, setPublicView] = useState<'landing' | 'auth'>('landing');
   const [showPreloader, setShowPreloader] = useState(true);
@@ -141,6 +144,98 @@ const AppContent: React.FC = () => {
   }
 
   if (!isAuthenticated) {
+    // Profile is actively loading from Supabase after Clerk sign-in
+    if (clerkLoaded && isSignedIn && isProfileLoading) {
+      return (
+        <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-slate-950">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-indigo-600" />
+            <p className="text-slate-500 font-medium animate-pulse">Setting up your account...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Signed in via Clerk but profile load failed (DB migration not run, JWT template issue, etc.)
+    if (clerkLoaded && isSignedIn && !isProfileLoading && profileStatus === null) {
+      return (
+        <div className="flex h-screen w-full items-center justify-center bg-slate-950 px-4">
+          <div className="max-w-md text-center space-y-6 p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl">
+            <div className="mx-auto h-16 w-16 rounded-full bg-rose-900/30 flex items-center justify-center">
+              <ShieldAlert className="h-8 w-8 text-rose-400" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Profile Setup Failed</h2>
+            <p className="text-slate-400 text-sm">
+              Could not load or create your profile. This usually means:
+            </p>
+            <ul className="text-left text-slate-400 text-sm space-y-1 list-disc list-inside">
+              <li>The database migration (009_clerk_migration.sql) has not been run in Supabase</li>
+              <li>The Clerk JWT template for Supabase is not configured</li>
+              <li>The Supabase URL or anon key is incorrect</li>
+            </ul>
+            <p className="text-slate-500 text-xs">See CLERK_SETUP.md for full instructions.</p>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="flex items-center justify-center gap-2 w-full rounded-lg bg-slate-800 py-3 font-semibold text-white hover:bg-slate-700 transition-colors"
+            >
+              <LogOut className="h-4 w-4" /> Sign Out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // User is signed in via Clerk but profile is pending admin approval
+    if (clerkLoaded && isSignedIn && profileStatus === 'pending') {
+      return (
+        <div className="flex h-screen w-full items-center justify-center bg-slate-950 px-4">
+          <div className="max-w-md text-center space-y-6 p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl">
+            <div className="mx-auto h-16 w-16 rounded-full bg-amber-900/30 flex items-center justify-center">
+              <Clock className="h-8 w-8 text-amber-400" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Pending Admin Approval</h2>
+            <p className="text-slate-400">
+              Your account has been created and your email is verified.
+              An administrator will review your registration shortly.
+            </p>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="flex items-center justify-center gap-2 w-full rounded-lg bg-slate-800 py-3 font-semibold text-white hover:bg-slate-700 transition-colors"
+            >
+              <LogOut className="h-4 w-4" /> Sign Out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // User is signed in via Clerk but profile was rejected
+    if (clerkLoaded && isSignedIn && profileStatus === 'rejected') {
+      return (
+        <div className="flex h-screen w-full items-center justify-center bg-slate-950 px-4">
+          <div className="max-w-md text-center space-y-6 p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl">
+            <div className="mx-auto h-16 w-16 rounded-full bg-rose-900/30 flex items-center justify-center">
+              <ShieldAlert className="h-8 w-8 text-rose-400" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Registration Rejected</h2>
+            <p className="text-slate-400">
+              Your registration was not approved by the administrator. Please contact support if you believe this is an error.
+            </p>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="flex items-center justify-center gap-2 w-full rounded-lg bg-slate-800 py-3 font-semibold text-white hover:bg-slate-700 transition-colors"
+            >
+              <LogOut className="h-4 w-4" /> Sign Out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Not signed in — show landing or auth page
     if (publicView === 'landing') {
       return (
         <LandingPage
