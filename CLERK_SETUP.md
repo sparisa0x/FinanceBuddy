@@ -250,6 +250,7 @@ These can be safely deleted once the migration is verified.
 - The `ensureProfile` function is called after sign-up email verification
 - If a user signs in before creating a profile, they'll see "pending approval" screen
 - Manually create the profile in Supabase SQL Editor if needed
+- If the same email or username already exists from a legacy profile, run `supabase/ADD_BYPASS_FUNCTIONS.sql` so the existing row is migrated to the Clerk user ID instead of failing on the unique email or username index
 
 ### Admin can't see pending users
 

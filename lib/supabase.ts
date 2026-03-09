@@ -32,10 +32,13 @@ export function createClerkSupabaseClient(
       fetch: async (url, options = {}) => {
         let clerkToken: string | null = null;
         try {
-          // Use standard Clerk session token (no template needed).
-          // Supabase verifies it via Clerk's JWKS endpoint configured in
-          // Authentication → Third-party auth in the Supabase dashboard.
-          clerkToken = await getToken();
+          // Prefer the dedicated Supabase JWT template. Some deployments are
+          // configured against Clerk's Supabase template rather than the raw
+          // session token, so falling back avoids breaking either setup.
+          clerkToken = await getToken({ template: 'supabase' });
+          if (!clerkToken) {
+            clerkToken = await getToken();
+          }
         } catch (err) {
           console.error('[Supabase] Failed to get Clerk JWT:', err);
         }
