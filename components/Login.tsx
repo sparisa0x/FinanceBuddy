@@ -86,7 +86,10 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
       return;
     }
 
-    if (!signInLoaded || !signIn) return;
+    if (!signInLoaded || !signIn) {
+      setError('Authentication service is still loading. Please wait a moment and try again.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -131,6 +134,8 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
         }
       } else if (result.status === 'needs_first_factor') {
         setError('Additional verification required. Please check your email.');
+      } else {
+        setError('Could not complete sign in. Please try again.');
       }
     } catch (err: any) {
       const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || err.message || 'Login failed.';
@@ -201,7 +206,10 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
       setError('Passwords do not match.');
       return;
     }
-    if (!signUpLoaded || !signUp) return;
+    if (!signUpLoaded || !signUp) {
+      setError('Authentication service is still loading. Please wait a moment and try again.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -252,7 +260,10 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
       setError('Please enter the 6-digit verification code.');
       return;
     }
-    if (!signUpLoaded || !signUp) return;
+    if (!signUpLoaded || !signUp) {
+      setError('Authentication service is still loading. Please wait a moment and try again.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -288,7 +299,10 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
   const [resending, setResending] = useState(false);
   const handleResendOTP = async () => {
     clearMessages();
-    if (!signUpLoaded || !signUp) return;
+    if (!signUpLoaded || !signUp) {
+      setError('Authentication service is still loading. Please wait a moment and try again.');
+      return;
+    }
     setResending(true);
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
@@ -387,7 +401,7 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
               />
               <EyeToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
             </div>
-            <button type="submit" disabled={loading || rateLimited}
+            <button type="submit" disabled={loading || rateLimited || !signInLoaded}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
               {loading ? (
                 <>
@@ -403,6 +417,9 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
                 </>
               )}
             </button>
+            {!signInLoaded && (
+              <p className="text-xs text-amber-300 text-center">Initializing authentication service...</p>
+            )}
             <p className="text-center text-sm text-slate-500">
               Don&apos;t have an account?{' '}
               <button type="button" onClick={() => switchView('register')} className="text-indigo-400 hover:text-indigo-300 font-medium">
