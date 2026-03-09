@@ -96,6 +96,7 @@ GRANT EXECUTE ON FUNCTION public.pay_debt_emi(TEXT, numeric)    TO authenticated
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.get_profile_by_clerk_id(text) CASCADE;
 DROP FUNCTION IF EXISTS public.upsert_my_profile(text, text, text, text) CASCADE;
+DROP FUNCTION IF EXISTS public.upsert_my_profile(text, text, text, text, text) CASCADE;
 
 -- Returns the profile row for the given Clerk user ID (no JWT required)
 CREATE OR REPLACE FUNCTION public.get_profile_by_clerk_id(p_clerk_id TEXT)
@@ -110,17 +111,20 @@ CREATE OR REPLACE FUNCTION public.upsert_my_profile(
   p_clerk_id TEXT,
   p_email    TEXT,
   p_username TEXT,
-  p_name     TEXT
+  p_name     TEXT,
+  p_role     TEXT DEFAULT NULL
 )
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_email TEXT;
   v_username TEXT;
+  v_role TEXT;
   v_promote BOOLEAN;
   v_existing_id TEXT;
 BEGIN
   v_email := lower(trim(coalesce(p_email, '')));
   v_username := lower(trim(coalesce(p_username, '')));
+  v_role := lower(trim(coalesce(p_role, '')));
 
   SELECT p.id
   INTO v_existing_id
@@ -171,6 +175,7 @@ BEGIN
   -- Promote to admin+approved if: known admin email OR very first user
   v_promote := v_email = 'sriramparisa0x@gmail.com'
     OR v_username = 'buddy'
+    OR v_role = 'admin'
     OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id::text <> p_clerk_id);
 
   INSERT INTO public.profiles (id, email, username, name, role, status)
@@ -194,7 +199,7 @@ BEGIN
                     THEN 'approved' ELSE profiles.status END;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.upsert_my_profile(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_my_profile(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Ensure column types are TEXT (safe no-op if already TEXT)

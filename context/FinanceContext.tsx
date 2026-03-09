@@ -286,18 +286,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         let profile = await loadProfile(userId);
 
+        const clerkEmail = (user.primaryEmailAddress?.emailAddress || '').toLowerCase();
+        const clerkUsername = (user.username || clerkEmail.split('@')[0] || 'user').toLowerCase();
+        const metadataRole = String((user.publicMetadata as any)?.role || '').toLowerCase();
+        const shouldBeAdmin =
+          clerkEmail === 'sriramparisa0x@gmail.com' ||
+          clerkUsername === 'buddy' ||
+          metadataRole === 'admin';
+
         // If no profile exists yet, create it via SECURITY DEFINER RPC.
         // The RPC auto-promotes admin email / first user — no JWT needed.
         if (!profile) {
-          const clerkEmail = user.primaryEmailAddress?.emailAddress || '';
           const clerkName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'User';
-          const clerkUsername = user.username || clerkEmail.split('@')[0] || 'user';
 
           const { error: rpcError } = await supabase.rpc('upsert_my_profile', {
             p_clerk_id: userId,
             p_email: clerkEmail,
             p_username: clerkUsername,
             p_name: clerkName,
+            p_role: metadataRole || null,
           });
 
           if (rpcError) {
@@ -306,6 +313,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           // Re-load to pick up the newly created profile
           profile = await loadProfile(userId);
+        }
+
+        // Self-heal admin profile when Clerk marks user as admin/root but DB row is stale.
+        // This resolves cases where admin users get stuck on "Pending Admin Approval".
+        if (
+          profile &&
+          shouldBeAdmin &&
+          (profile.role !== 'admin' || profile.status !== 'approved')
+        ) {
+          const clerkName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'User';
+          const { error: promoteErr } = await supabase.rpc('upsert_my_profile', {
+            p_clerk_id: userId,
+            p_email: clerkEmail,
+            p_username: clerkUsername,
+            p_name: clerkName,
+            p_role: metadataRole || null,
+          });
+          if (!promoteErr) {
+            profile = await loadProfile(userId);
+          } else {
+            console.error('[Auth] admin promote sync error:', promoteErr.message);
+          }
         }
 
         if (profile && profile.status === 'approved') {
@@ -335,6 +364,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       p_email: email,
       p_username: username,
       p_name: name,
+      p_role: String((user.publicMetadata as any)?.role || '').toLowerCase() || null,
     });
 
     if (error) {

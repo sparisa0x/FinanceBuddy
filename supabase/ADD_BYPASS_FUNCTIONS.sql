@@ -6,6 +6,7 @@
 -- Drop old versions if they exist
 DROP FUNCTION IF EXISTS public.get_profile_by_clerk_id(text) CASCADE;
 DROP FUNCTION IF EXISTS public.upsert_my_profile(text, text, text, text) CASCADE;
+DROP FUNCTION IF EXISTS public.upsert_my_profile(text, text, text, text, text) CASCADE;
 
 -- Returns the profile row for the given Clerk user ID (bypasses RLS)
 CREATE OR REPLACE FUNCTION public.get_profile_by_clerk_id(p_clerk_id TEXT)
@@ -19,17 +20,20 @@ CREATE OR REPLACE FUNCTION public.upsert_my_profile(
   p_clerk_id TEXT,
   p_email    TEXT,
   p_username TEXT,
-  p_name     TEXT
+  p_name     TEXT,
+  p_role     TEXT DEFAULT NULL
 )
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_email TEXT;
   v_username TEXT;
+  v_role TEXT;
   v_promote BOOLEAN;
   v_existing_id TEXT;
 BEGIN
   v_email := lower(trim(coalesce(p_email, '')));
   v_username := lower(trim(coalesce(p_username, '')));
+  v_role := lower(trim(coalesce(p_role, '')));
 
   SELECT p.id
   INTO v_existing_id
@@ -79,6 +83,7 @@ BEGIN
 
   v_promote := v_email = 'sriramparisa0x@gmail.com'
     OR v_username = 'buddy'
+    OR v_role = 'admin'
     OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id::text <> p_clerk_id);
 
   INSERT INTO public.profiles (id, email, username, name, role, status)
@@ -105,7 +110,7 @@ $$;
 
 -- Grant to both anon and authenticated so it works regardless of JWT state
 GRANT EXECUTE ON FUNCTION public.get_profile_by_clerk_id(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.upsert_my_profile(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_my_profile(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
 
 -- Also immediately promote the admin email if the profile already exists
 UPDATE public.profiles
