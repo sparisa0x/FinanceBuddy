@@ -1,22 +1,26 @@
 import React, { useState, useRef } from 'react';
 import { useSignIn, useSignUp } from '@clerk/react/legacy';
-import { useAuth, useUser } from '@clerk/react';
+import { useAuth } from '@clerk/react';
 import { useFinance } from '../context/FinanceContext';
-import { Lock, User, Mail, ArrowRight, ShieldCheck, AlertCircle, CheckCircle, Eye, EyeOff, KeyRound, RotateCcw } from 'lucide-react';
+import { Lock, User, Mail, ArrowRight, ShieldCheck, AlertCircle, CheckCircle, Eye, EyeOff, KeyRound, RotateCcw, Clock } from 'lucide-react';
 
-type AuthView = 'login' | 'register' | 'verifyEmail' | 'pendingApproval';
+type AuthView = 'login' | 'register' | 'verifyEmail' | 'verifyLoginOtp' | 'pendingApproval';
+type LoginOtpStrategy = 'email_code' | 'phone_code' | 'totp';
 
 export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => {
   const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
   const { signUp, setActive: setSignUpActive, isLoaded: signUpLoaded } = useSignUp();
   const { signOut } = useAuth();
-  const { user } = useUser();
-  const { ensureProfile, profileStatus } = useFinance();
+  const { ensureProfile } = useFinance();
 
   const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [rateLimited, setRateLimited] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [loginOtpStrategy, setLoginOtpStrategy] = useState<LoginOtpStrategy | null>(null);
+  const [loginOtpHint, setLoginOtpHint] = useState('email');
 
   // Login fields
   const [identifier, setIdentifier] = useState('');
@@ -41,6 +45,24 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
 
   const clearMessages = () => { setError(''); setSuccess(''); };
 
+  const startRateLimitCooldown = () => {
+    setRateLimited(true);
+    setCooldownSeconds(60);
+    setError('Too many login attempts. Please wait 60 seconds before trying again.');
+
+    const timer = setInterval(() => {
+      setCooldownSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setRateLimited(false);
+          setError('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   const switchView = (nextView: AuthView) => {
     clearMessages();
     setView(nextView);
@@ -48,6 +70,10 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
     setShowRegPassword(false);
     setShowConfirmPassword(false);
     setOtpCode('');
+    if (nextView === 'login') {
+      setLoginOtpStrategy(null);
+      setLoginOtpHint('email');
+    }
   };
 
   // ── Login handler ─────────────────────────────────────────────────────────
@@ -72,10 +98,7 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
       if (result.status === 'complete') {
         await setSignInActive({ session: result.createdSessionId });
         setSuccess('Login successful. Loading your data...');
-        // FinanceContext will detect isSignedIn and load profile.
-        // If profile is pending/rejected, App.tsx will show appropriate view.
       } else if (result.status === 'needs_second_factor') {
-        // MFA is enabled — handle second factor
         const emailFactor = result.supportedSecondFactors?.find(
           (f: any) => f.strategy === 'email_code'
         );
@@ -88,20 +111,74 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
 
         if (emailFactor) {
           await signIn.prepareSecondFactor({ strategy: 'email_code' });
+          setLoginOtpStrategy('email_code');
+          setLoginOtpHint('email');
           setSuccess('Verification code sent to your email.');
-          // For now: complete without OTP in the UI (user can add MFA later)
+          setView('verifyLoginOtp');
         } else if (phoneFactor) {
           await signIn.prepareSecondFactor({ strategy: 'phone_code' });
+          setLoginOtpStrategy('phone_code');
+          setLoginOtpHint('phone');
           setSuccess('Verification code sent to your phone.');
+          setView('verifyLoginOtp');
         } else if (totpFactor) {
-          setError('Please enter your authenticator code.');
+          setLoginOtpStrategy('totp');
+          setLoginOtpHint('authenticator app');
+          setSuccess('Enter the code from your authenticator app.');
+          setView('verifyLoginOtp');
+        } else {
+          setError('Second-factor authentication is required, but no supported method is available.');
         }
       } else if (result.status === 'needs_first_factor') {
         setError('Additional verification required. Please check your email.');
       }
     } catch (err: any) {
       const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || err.message || 'Login failed.';
-      setError(msg);
+      if (msg.toLowerCase().includes('too many requests') || err.status === 429) {
+        startRateLimitCooldown();
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Login OTP verification handler ────────────────────────────────────────
+  const handleVerifyLoginOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!otpCode.trim() || otpCode.trim().length < 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!signInLoaded || !signIn || !loginOtpStrategy) {
+      setError('Verification session expired. Please sign in again.');
+      setView('login');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: loginOtpStrategy,
+        code: otpCode.trim(),
+      });
+
+      if (result.status === 'complete') {
+        await setSignInActive({ session: result.createdSessionId });
+        setSuccess('Login successful. Loading your data...');
+      } else {
+        setError('Verification incomplete. Please try again.');
+      }
+    } catch (err: any) {
+      const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || err.message || 'Verification failed.';
+      if (msg.toLowerCase().includes('too many requests') || err.status === 429) {
+        startRateLimitCooldown();
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -156,7 +233,11 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
       setTimeout(() => otpInputRef.current?.focus(), 100);
     } catch (err: any) {
       const msg = err.errors?.[0]?.longMessage || err.errors?.[0]?.message || err.message || 'Registration failed.';
-      setError(msg);
+      if (msg.toLowerCase().includes('too many requests') || err.status === 429) {
+        startRateLimitCooldown();
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -183,7 +264,7 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
         // Activate the session briefly so we can create the Supabase profile
         await setSignUpActive({ session: result.createdSessionId });
 
-        // Create the Supabase profile (status: pending)
+        // Create the Supabase profile (status: pending for normal users)
         const { name: regName, username: regUsername, email: regEmail } = regDataRef.current;
         await ensureProfile(regName, regUsername, regEmail);
 
@@ -256,12 +337,14 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
             {view === 'login' && 'Welcome Back'}
             {view === 'register' && 'Create Account'}
             {view === 'verifyEmail' && 'Verify Email'}
+            {view === 'verifyLoginOtp' && 'Verify Sign In'}
             {view === 'pendingApproval' && 'Almost There!'}
           </h2>
           <p className="text-slate-400 text-sm mt-1">
             {view === 'login' && 'Sign in to access your finance dashboard'}
             {view === 'register' && 'Start managing your finances securely'}
             {view === 'verifyEmail' && 'Enter the code sent to your email'}
+            {view === 'verifyLoginOtp' && `Enter the code sent to your ${loginOtpHint}`}
             {view === 'pendingApproval' && 'Your account is under review'}
           </p>
         </div>
@@ -269,7 +352,15 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
         {/* ── Messages ──────────────────────────────────────────────────── */}
         {error && (
           <div className="rounded-lg border border-rose-900/30 bg-rose-900/20 p-3 flex items-center gap-2 text-sm text-rose-400">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              {error}
+              {rateLimited && cooldownSeconds > 0 && (
+                <div className="mt-1 text-xs text-rose-300">
+                  Retry available in {cooldownSeconds}s
+                </div>
+              )}
+            </div>
           </div>
         )}
         {success && (
@@ -296,10 +387,21 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
               />
               <EyeToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
             </div>
-            <button type="submit" disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 shadow-lg transition-all disabled:opacity-50">
-              {loading ? <RotateCcw className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-              {loading ? 'Signing in...' : 'Sign In'}
+            <button type="submit" disabled={loading || rateLimited}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? (
+                <>
+                  <RotateCcw className="h-4 w-4 animate-spin" /> Signing in...
+                </>
+              ) : rateLimited ? (
+                <>
+                  <Clock className="h-4 w-4" /> Wait {cooldownSeconds}s
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="h-4 w-4" /> Sign In
+                </>
+              )}
             </button>
             <p className="text-center text-sm text-slate-500">
               Don&apos;t have an account?{' '}
@@ -379,6 +481,36 @@ export const Login: React.FC<{ onBackHome?: () => void }> = ({ onBackHome }) => 
               <button type="button" onClick={() => switchView('register')}
                 className="text-slate-400 hover:text-white">
                 Back
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── Login OTP Verification ────────────────────────────────────── */}
+        {view === 'verifyLoginOtp' && (
+          <form onSubmit={handleVerifyLoginOtp} className="space-y-4">
+            <div className="relative">
+              <KeyRound className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Enter 6-digit code"
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className={inputBase}
+                maxLength={6}
+                autoFocus
+                inputMode="numeric"
+              />
+            </div>
+            <button type="submit" disabled={loading || rateLimited}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? <RotateCcw className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {loading ? 'Verifying...' : 'Verify & Continue'}
+            </button>
+            <div className="flex justify-between text-sm">
+              <button type="button" onClick={() => switchView('login')}
+                className="text-slate-400 hover:text-white">
+                Back to Sign In
               </button>
             </div>
           </form>

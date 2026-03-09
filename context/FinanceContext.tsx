@@ -284,13 +284,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     (async () => {
       setIsProfileLoading(true);
       try {
-        console.log('[Auth] Loading profile for Clerk user:', userId);
         let profile = await loadProfile(userId);
 
         // If no profile exists yet, create it via SECURITY DEFINER RPC.
         // The RPC auto-promotes admin email / first user — no JWT needed.
         if (!profile) {
-          console.log('[Auth] No profile found, auto-creating via RPC...');
           const clerkEmail = user.primaryEmailAddress?.emailAddress || '';
           const clerkName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'User';
           const clerkUsername = user.username || clerkEmail.split('@')[0] || 'user';
@@ -304,13 +302,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           if (rpcError) {
             console.error('[Auth] upsert_my_profile RPC error:', rpcError.message, rpcError);
-          } else {
-            console.log('[Auth] Profile created via RPC.');
           }
 
           // Re-load to pick up the newly created profile
           profile = await loadProfile(userId);
-          console.log('[Auth] Re-loaded profile:', profile ? `status=${profile.status}, role=${profile.role}` : 'null');
         }
 
         if (profile && profile.status === 'approved') {
